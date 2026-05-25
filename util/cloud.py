@@ -46,7 +46,7 @@ if __name__ == "__main__":
     plt.axis("off")
 
     # 儲存
-    save_path = cloud_cfg.get('save_path', 'results/wordcloud.png')
+    save_path = cloud_cfg.get('output_path', 'results/wordcloud.png')
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     if not os.path.exists(save_path):
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
