@@ -1,0 +1,53 @@
+# ============================================================
+# LLM PCFG Cracking - 專案設定檔
+# ============================================================
+
+# ── BPE Tokenizer 訓練設定 ────────────────────────────────
+bpe:
+  train: true                  # 是否執行 BPE 訓練（false 則載入既有 tokenizer）
+  vocab_size: 4096             # 詞彙表大小
+  min_frequency: 2             # token pair 最低出現次數（低於此值不合併）
+  avg_len: 4.5               # PwdSegment 停止條件（null=使用 vocab_size；1.8=細粒度；4.5=粗粒度）
+  special_tokens:
+    - "<pad>"
+    - "<unk>"
+    - "<bos>"
+    - "<eos>"
+  save_path: "models/tokenizer/000webhost"   # tokenizer 儲存目錄
+  train_corpus: "datasets/cleaned/000webhost"  # 用於訓練 tokenizer 的語料路徑
+  show_progress: true           # 是否顯示訓練進度條
+  sampling_size: 100000
+
+
+# ── 密碼清洗設定 ─────────────────────────────────────────
+password_cleaning:
+  # 使用的dataset
+  data_path: "datasets"                        # 原始 dataset 目錄（內含 000webhost.txt 等檔案）
+  dataset: ['000webhost']  # 可選：'000webhost', 'rockyou',, 'phpbb','hotmail', 'other'
+  # 長度過濾
+  min_length: 8                # 最短密碼長度
+  max_length: 20               # 最長密碼長度
+
+  # 字元集過濾
+  allowed_charsets:
+    lowercase: true            # 允許小寫英文字母 (a-z)
+    uppercase: true            # 允許大寫英文字母 (A-Z)
+    digits: true               # 允許數字 (0-9)
+    special: true              # 允許特殊符號 (!@#$%...)
+  reject_non_ascii: true       # 排除含非 ASCII 字元的密碼
+
+  # 重複與低熵過濾
+  reject_all_same_char: true   # 排除全部相同字元（如 "aaaaaa"）
+  reject_sequential: false     # 排除純連續字元（如 "123456", "abcdef"）
+
+  # 去重
+  dedup: true                  # 是否移除重複密碼
+
+  # 輸出
+  output_path: "datasets/cleaned/000webhost"   # 清洗後資料儲存路徑
+
+#　cloud text
+cloud :
+  data_path: "models/tokenizer/000webhost/vocab_with_freq.json"
+  top_k: 3000
+  output_path: "gen/cloud/000webhost.png"
