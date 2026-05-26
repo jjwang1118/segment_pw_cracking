@@ -1,0 +1,23 @@
+{
+  "000webhost": {
+    "n_tokens": 4090,
+    "alpha": 1.0534,
+    "r2": 0.9666,
+    "max_freq": 21792,
+    "min_freq": 2
+  },
+  "hotmail": {
+    "n_tokens": 3471,
+    "alpha": 0.8527,
+    "r2": 0.9522,
+    "max_freq": 117,
+    "min_freq": 1
+  },
+  "phpbb": {
+    "n_tokens": 4092,
+    "alpha": 1.0276,
+    "r2": 0.9748,
+    "max_freq": 3476,
+    "min_freq": 1
+  }
+}

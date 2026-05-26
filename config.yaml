@@ -6,14 +6,14 @@
 bpe:
   train: true                  # 是否執行 BPE 訓練（false 則載入既有 tokenizer）
   vocab_size: 4096             # 詞彙表大小
-  min_frequency: 2             # token pair 最低出現次數（低於此值不合併）
+  min_frequency: 1             # token pair 最低出現次數（低於此值不合併；設 1 = 不過濾，忠實還原論文行為）
   avg_len: 4.5               # PwdSegment 停止條件（null=使用 vocab_size；1.8=細粒度；4.5=粗粒度）
   special_tokens:
     - "<pad>"
     - "<unk>"
     - "<bos>"
     - "<eos>"
-  save_path: "models/tokenizer/000webhost"   # tokenizer 儲存目錄
+  save_path: "models/tokenizer/000webhost/non_filter_freq"   # tokenizer 儲存目錄
   train_corpus: "datasets/cleaned/000webhost"  # 用於訓練 tokenizer 的語料路徑
   show_progress: true           # 是否顯示訓練進度條
   sampling_size: 100000
@@ -44,10 +44,10 @@ password_cleaning:
   dedup: true                  # 是否移除重複密碼
 
   # 輸出
-  output_path: "datasets/cleaned/000webhost"   # 清洗後資料儲存路徑
+  output_path: "datasets/cleaned/hotmail"   # 清洗後資料儲存路徑
 
 #　cloud text
 cloud :
-  data_path: "models/tokenizer/000webhost/vocab_with_freq.json"
+  data_path: "models/tokenizer/hotmail/vocab_with_freq.json"
   top_k: 3000
-  output_path: "gen/cloud/000webhost.png"
+  output_path: "gen/cloud/hotmail.png"
