@@ -1,14 +1,8 @@
 # 虛擬環境
 .venv/
 
-# 原始與清洗後的密碼資料集（隱私 + 大檔）
-datasets/
-
-# 訓練產物（大檔，可本地重現）
-models/
-
-# 詞雲圖片輸出
-results/
+# semantic-guesser 為獨立 repo，不推送
+models/semantic-guesser/
 
 # Python 快取
 __pycache__/

@@ -21,7 +21,15 @@ if __name__ == "__main__":
     save_path = cfg['save_path']
     os.makedirs(save_path, exist_ok=True)
 
-    if cfg.get('avg_len') is not None:
+    tokenizer_path = os.path.join(save_path, 'tokenizer.json')
+    already_trained = not cfg.get('train', True) and os.path.exists(tokenizer_path)
+
+    if already_trained:
+        print(f"載入既有 tokenizer：{tokenizer_path}")
+        tokenizer = Tokenizer.from_file(tokenizer_path)
+        with open(os.path.join(save_path, 'vocab_freq.json'), 'r', encoding='utf-8') as f:
+            token_freq = json.load(f)
+    elif cfg.get('avg_len') is not None:
         # PwdSegment 模式
         tokenizer, token_freq = _train_with_avg_len(cfg)
     else:
@@ -34,10 +42,11 @@ if __name__ == "__main__":
             counter.update(tokenizer.encode(pwd).tokens)
         token_freq = dict(counter.most_common())
 
-    # 4. 儲存訓練好的 tokenizer 與詞彙頻率
-    tokenizer.save(os.path.join(save_path, 'tokenizer.json'))
-    with open(os.path.join(save_path, 'vocab_freq.json'), 'w', encoding='utf-8') as f:
-        json.dump(token_freq, f, ensure_ascii=False, indent=2)
+    # 4. 儲存訓練好的 tokenizer 與詞彙頻率（train=false 時跳過，直接使用既有檔案）
+    if not already_trained:
+        tokenizer.save(os.path.join(save_path, 'tokenizer.json'))
+        with open(os.path.join(save_path, 'vocab_freq.json'), 'w', encoding='utf-8') as f:
+            json.dump(token_freq, f, ensure_ascii=False, indent=2)
 
     # 5. 合併 vocab（token→id）與頻率，依頻率排序儲存
     special_tokens = set(cfg.get('special_tokens', []))

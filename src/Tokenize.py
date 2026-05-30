@@ -1,4 +1,4 @@
-from transformers import AutoTokenizer
+from tokenizers import Tokenizer
 import pandas as pd
 import yaml
 import os
@@ -20,12 +20,13 @@ class Tokenizer_tag:
         dataset = cfg['dataset']
         dirs    = cfg['dirs']
 
-        self.tokenizer      = AutoTokenizer.from_pretrained(
+        self.tokenizer      = Tokenizer.from_file(
             os.path.join(dirs['tokenizer'], dataset, 'tokenizer.json')
         )
+        self.dataset        = dataset
+        self.dirs           = dirs
         self.path           = os.path.join(dirs['datasets'], f'{dataset}.txt')
         self._out_tokenized = os.path.join(dirs['tokenized'], f'{dataset}_tokenized.csv')
-        self._out_tagged    = os.path.join(dirs['tagged'],    f'{dataset}_tagged.csv')
 
     def read(self):
         with open(self.path, 'r', encoding='utf-8') as f:
@@ -35,11 +36,14 @@ class Tokenizer_tag:
     def tokenize(self, passwords):
         store = []
         for password in passwords:
-            tokens = self.tokenizer.tokenize(password)
+            tokens = self.tokenizer.encode(password).tokens
             print(f"Password: {password} , Tokens: {tokens}\n")
             store.append((password, tokens))
 
-        df = pd.DataFrame(store, columns=['Password', 'Tokens'])
+        df = pd.DataFrame(
+            [(pw, '|'.join(toks)) for pw, toks in store],
+            columns=['Password', 'Tokens']
+        )
         os.makedirs(os.path.dirname(self._out_tokenized), exist_ok=True)
         df.to_csv(self._out_tokenized, index=False, encoding='utf-8')
         print(f"Tokenization complete. Results saved to '{self._out_tokenized}'.")
@@ -51,6 +55,9 @@ class Tokenizer_tag:
         tag_cfg = self.cfg['tagging']
         sg_path = os.path.abspath(tag_cfg['semantic_guesser_path'])
         tagtype = tag_cfg['tagtype']
+        self._out_tagged = os.path.join(
+            self.dirs['tagged'], f'{self.dataset}_{tagtype}_tagged.csv'
+        )
 
         if sg_path not in sys.path:
             sys.path.insert(0, sg_path)
@@ -65,26 +72,25 @@ class Tokenizer_tag:
         tags_col, structure_col = [], []
 
         for _, row in df.iterrows():
-            tokens = row['Tokens']
+            tokens = row['Tokens'].split('|') if isinstance(row['Tokens'], str) else row['Tokens']
             row_tags = []
 
             for token in tokens:
-                clean = token.lstrip('##Ġ▁')
-                if not clean:
+                if not token:
                     continue
 
-                pos = pos_tagger.tag([clean])[0][1]
-                tag = grammar_tagger._get_tag(clean, pos, None, tagtype)
+                pos = pos_tagger.tag([token])[0][1]
+                tag = grammar_tagger._get_tag(token, pos, None, tagtype)
                 row_tags.append(tag if tag else 'unk')
 
             structure = ''.join(f'({t})' for t in row_tags)
-            tags_col.append(row_tags)
+            tags_col.append('|'.join(row_tags))
             structure_col.append(structure)
 
         df['Tags']      = tags_col
         df['Structure'] = structure_col
 
         os.makedirs(os.path.dirname(self._out_tagged), exist_ok=True)
-        df.to_csv(self._out_tagged, index=False, encoding='utf-8')
+        df[['Password', 'Tokens', 'Tags']].to_csv(self._out_tagged, index=False, encoding='utf-8')
         print(f"Tagging complete. Results saved to '{self._out_tagged}'.")
         return df

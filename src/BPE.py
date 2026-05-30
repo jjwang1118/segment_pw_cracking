@@ -4,13 +4,8 @@ import os
 import glob
 
 
-def BPE(config: dict) -> Tokenizer:
+def BPE(config: dict) -> tuple:
     cfg = config['bpe']
-
-    # 若不需重新訓練，直接載入既有 tokenizer
-    tokenizer_path = os.path.join(cfg['save_path'], 'tokenizer.json')
-    if not cfg['train'] and os.path.exists(tokenizer_path):
-        return Tokenizer.from_file(tokenizer_path)
 
     # 建立 BPE 模型（unk_token 對應 special_tokens 中的 <unk>）
     tokenizer = Tokenizer(models.BPE(unk_token='<unk>'))
