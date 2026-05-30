@@ -15,7 +15,7 @@ def BPE(config: dict) -> Tokenizer:
     # 建立 BPE 模型（unk_token 對應 special_tokens 中的 <unk>）
     tokenizer = Tokenizer(models.BPE(unk_token='<unk>'))
 
-    # 定義 Trainer
+    # 定義 Trainer  
     # 密碼為字元序列，不設 end_of_word_suffix（避免混淆密碼結構）
     trainer = trainers.BpeTrainer(
         vocab_size=cfg['vocab_size'],

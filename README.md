@@ -1,25 +1,28 @@
 # LLM PCFG Cracking Model
 
 基於大型語言模型（LLM）與概率上下文無關文法（PCFG）的密碼破解模型。  
-核心流程：先用 BPE Tokenizer 將密碼分割成有意義的子字串（token），再以此訓練 LLM 生成符合密碼分佈的候選密碼。
+核心流程：先用 BPE Tokenizer 將密碼分割成有意義的子字串（token），再透過 semantic-guesser 的 PCFG 對每個 token 貼上語義標籤，最終以此訓練 LLM 生成符合密碼分佈的候選密碼。
 
 ---
 
 ## 專案結構
 
 ```
-├── config.yaml              # 全域設定檔
-├── processData.py           # 密碼資料清洗與預處理
-├── trainBPE.py              # BPE Tokenizer 訓練入口
+├── config.yaml                  # 全域設定檔（BPE、資料清洗、詞雲）
+├── tokenize_setting.yaml        # Tokenize + PCFG 貼標籤設定檔
+├── processData.py               # 密碼資料清洗與預處理
+├── trainBPE.py                  # BPE Tokenizer 訓練入口
+├── run_tokenize.py              # Tokenize + PCFG 貼標籤執行入口
 ├── src/
-│   └── BPE.py               # BPE 模型建構（標準模式 + PwdSegment 模式）
+│   ├── BPE.py                   # BPE 模型建構（標準模式 + PwdSegment 模式）
+│   └── Tokenize.py              # Tokenizer 推論 + PCFG 貼標籤
 ├── util/
-│   ├── data.py              # 資料載入、清洗、去重工具
-│   ├── trainTokenizer.py    # Tokenizer 訓練分派器
-│   └── cloud.py             # 詞彙頻率詞雲視覺化
-├── datasets/                # 原始密碼資料集（每行一個密碼，gitignore）
-├── models/                  # 訓練產物（gitignore）
-└── gen/                     # 生成圖片輸出
+│   ├── data.py                  # 資料載入、清洗、去重工具
+│   ├── trainTokenizer.py        # Tokenizer 訓練分派器
+│   └── cloud.py                 # 詞彙頻率詞雲視覺化
+├── datasets/                    # 原始密碼資料集（每行一個密碼，gitignore）
+├── models/                      # 訓練產物（gitignore）
+└── gen/                         # 生成圖片輸出
 ```
 
 ---
@@ -46,7 +49,36 @@ python trainBPE.py
 | `vocab_with_freq.json` | 所有 token 含 id + 頻率，依頻率排序 |
 | `merged_vocab.json` | 僅合併後的多字元 token（length ≥ 2），依頻率排序 |
 
-### Step 3：詞雲視覺化
+### Step 3：Tokenize + PCFG 貼標籤
+
+#### 前置：安裝 semantic-guesser
+```bash
+git clone https://github.com/vialab/semantic-guesser ../semantic-guesser
+cd ../semantic-guesser
+pip install -r requirements.txt
+cd -
+```
+
+#### 執行
+```bash
+python run_tokenize.py
+```
+
+對每個密碼的 BPE token 貼上 PCFG 語義標籤，輸出兩份 CSV：
+
+| 輸出檔案 | 說明 |
+|---|---|
+| `datasets/tokenized/<dataset>_tokenized_passwords.csv` | 密碼 + token 列表 |
+| `datasets/tokenized/<dataset>_tagged_passwords.csv` | 密碼 + token + 標籤 + 結構字串 |
+
+輸出範例：
+
+| Password | Tokens | Tags | Structure |
+|---|---|---|---|
+| `dragon99!` | `['dragon', '99', '!']` | `['nn', 'number2', 'special1']` | `(nn)(number2)(special1)` |
+| `iloveyou` | `['i', 'love', 'you']` | `['nn', 'vv0', 'nn']` | `(nn)(vv0)(nn)` |
+
+### Step 4：詞雲視覺化
 ```bash
 python util/cloud.py
 ```
@@ -69,13 +101,15 @@ PwdSegment 模式實作自 Ming Xu et al. CCS'21，以詞彙表平均 token 長�
 
 ---
 
-## 主要設定（config.yaml）
+## 主要設定
+
+### config.yaml（BPE 訓練與資料清洗）
 
 ```yaml
 bpe:
   train: true
   vocab_size: 4096
-  min_frequency: 2
+  min_frequency: 1
   avg_len: 4.5              # null=標準模式；1.8=細粒度；4.5=粗粒度
   save_path: "models/tokenizer/000webhost"
   train_corpus: "datasets/cleaned/000webhost"
@@ -85,21 +119,34 @@ password_cleaning:
   dataset: ['000webhost']
   min_length: 8
   max_length: 20
-  allowed_charsets:
-    lowercase: true
-    uppercase: true
-    digits: true
-    special: true
   reject_non_ascii: true
   reject_all_same_char: true
   dedup: true
   output_path: "datasets/cleaned/000webhost"
-
-cloud:
-  data_path: "models/tokenizer/000webhost/vocab_with_freq.json"
-  top_k: 3000
-  output_path: "gen/cloud/000webhost.png"
 ```
+
+### tokenize_setting.yaml（Tokenize + PCFG 貼標籤）
+
+```yaml
+tokenize:
+  dataset: '000webhost'
+  data_path: 'datasets/000webhost.txt'
+  tokenizer_path: 'models/tokenizer/000webhost/tokenizer.json'
+  output:
+    tokenized: 'datasets/tokenized/000webhost_tokenized_passwords.csv'
+    tagged:    'datasets/tokenized/000webhost_tagged_passwords.csv'
+  tagging:
+    semantic_guesser_path: '../semantic-guesser'
+    tagtype: 'pos'           # 'pos' | 'backoff' | 'pos_semantic'
+```
+
+#### tagtype 說明
+
+| 值 | 說明 | 需求 |
+|---|---|---|
+| `pos` | 純詞性標籤（最穩定） | 僅需 semantic-guesser 基本安裝 |
+| `backoff` | 語意優先，無法辨識才退回詞性 | 需先完成 PCFG 訓練 |
+| `pos_semantic` | 詞性 + 語意結合 | 需先完成 PCFG 訓練 |
 
 ---
 
@@ -112,3 +159,4 @@ cloud:
 ## 參考文獻
 
 - Ming Xu et al., *Password Cracking with PwdSegment*, ACM CCS 2021
+- Vialab, *Semantic Guesser*, https://github.com/vialab/semantic-guesser

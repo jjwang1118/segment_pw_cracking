@@ -1,0 +1,19 @@
+# ============================================================
+# Tokenize 設定檔
+# ── 只需修改 dataset，所有路徑自動組合 ──────────────────────
+# ============================================================
+
+tokenize:
+  dataset: '000webhost'          # 切換資料集只改這裡
+
+  # ── 基底目錄 ───────────────────────────────────────────
+  dirs:
+    datasets:  'datasets'                    # {datasets}/{dataset}.txt
+    tokenizer: 'models/tokenizer'            # {tokenizer}/{dataset}/tokenizer.json
+    tokenized: 'datasets/tokenized'         # {tokenized}/{dataset}_tokenized.csv
+    tagged:    'datasets/tagged'             # {tagged}/{dataset}_tagged.csv
+
+  # ── PCFG 貼標籤設定 ────────────────────────────────────
+  tagging:
+    semantic_guesser_path: '../semantic-guesser'
+    tagtype: 'pos'               # 'pos' | 'backoff' | 'pos_semantic'
