@@ -1,6 +1,13 @@
 # 虛擬環境
 .venv/
 
+# 模型權重與 checkpoint（體積過大）
+models/
+checkpoints/
+
+# 開發日誌
+docs/logs/
+
 # semantic-guesser 為獨立 repo，不推送
 models/semantic-guesser/
 

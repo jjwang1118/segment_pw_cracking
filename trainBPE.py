@@ -9,7 +9,7 @@ from util.trainTokenizer import _train_with_avg_len
 
 if __name__ == "__main__":
     # 1. 載入設定
-    config = data_util.load_config('config.yaml')
+    config = data_util.load_config('config/config.yaml')
 
     # 2. 載入並清洗密碼資料
     dataset = data_util.load_data(config['password_cleaning']['data_path'], config)

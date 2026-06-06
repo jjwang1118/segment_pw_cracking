@@ -3,6 +3,7 @@ import yaml
 import os
 from pathlib import Path
 
+# download ------------------------------------------
 def load_config(cpnfig_path):
     with open(cpnfig_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -28,7 +29,7 @@ def load_data(data_path:str,config:dict):
     return dataset
 
 
-
+# clean ------------------------------------------
 def clean_data(dataset:pd.DataFrame,config:dict):
     # 長度過濾
     min_length = config['password_cleaning']['min_length']
@@ -62,5 +63,6 @@ def save_cleaned_data(dataset:pd.DataFrame,output_path:str):
         os.makedirs(output_path)
     dataset.to_csv(os.path.join(output_path, 'cleaned_data.txt'), index=False, header=False)
     
+
 
 

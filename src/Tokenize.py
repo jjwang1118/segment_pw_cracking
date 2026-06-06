@@ -4,7 +4,9 @@ import yaml
 import os
 
 
-_DEFAULT_CFG = os.path.join(os.path.dirname(__file__), '..', 'tokenize_setting.yaml')
+## BPE TOKENIZE動作
+
+_DEFAULT_CFG = os.path.join(os.path.dirname(__file__), '..', 'config', 'tokenize_setting.yaml')
 
 
 def _load_config(config_path: str = _DEFAULT_CFG) -> dict:
@@ -30,7 +32,7 @@ class Tokenizer_tag:
 
     def read(self):
         with open(self.path, 'r', encoding='utf-8') as f:
-            passwords = [line.strip() for line in f if line.strip()]
+            passwords = [line.strip() for line in f if line.strip() and '|' not in line]
         return passwords
 
     def tokenize(self, passwords):

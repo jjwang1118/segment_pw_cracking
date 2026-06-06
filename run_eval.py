@@ -1,0 +1,236 @@
+"""
+run_eval.py — targeted password guessing evaluation entry point.
+
+For each test entry in test_data.jsonl:
+  1. Build knowledge prompt from Tokens + Tags (real password never shown to model)
+  2. Run contrastive_search to generate candidate passwords
+  3. Check if real password appears in candidates → min_cracked_guess_number
+  4. Write per-entry JSONL and print aggregate crack-rate stats
+
+Usage:
+    python run_eval.py
+    python run_eval.py --config config/search.yaml
+"""
+
+import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+
+import sys
+import json
+import time
+import yaml
+import torch
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+
+def _load_yaml(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f)
+
+
+def _resolve_model_path(eval_cfg: dict, search_cfg: dict) -> str:
+    """Return model path: eval_cfg > search_cfg > train_config.yaml fallback."""
+    for cfg in (eval_cfg, search_cfg):
+        if "model_path" in cfg:
+            return str(PROJECT_ROOT / cfg["model_path"])
+    train_cfg = _load_yaml(PROJECT_ROOT / "config" / "train_config.yaml")
+    tc = train_cfg["train"]["train_config"]
+    return str(PROJECT_ROOT / tc["model_path"] / tc["model_name"])
+
+
+def _load_model(model_path: str, precision: str):
+    """Load model. Automatically detects LoRA adapter and loads with PEFT if present."""
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    dtype  = {"half": torch.float16, "bf16": torch.bfloat16}.get(precision, torch.float32) \
+             if device == "cuda" else torch.float32
+
+    is_lora = (Path(model_path) / "adapter_config.json").exists()
+
+    if is_lora:
+        # LoRA checkpoint: load base model first, then adapter
+        import json as _json
+        adapter_cfg = _json.loads((Path(model_path) / "adapter_config.json").read_text())
+        base_path   = adapter_cfg.get("base_model_name_or_path", "")
+        # Prefer local base model if path exists, otherwise use adapter_cfg value
+        local_base  = PROJECT_ROOT / "models" / Path(base_path).name
+        base_path   = str(local_base) if local_base.exists() else base_path
+        print(f"[*] 載入基底模型：{base_path}  (device={device}, dtype={dtype})")
+        tokenizer = AutoTokenizer.from_pretrained(base_path)
+        model     = AutoModelForCausalLM.from_pretrained(base_path, torch_dtype=dtype)
+        from peft import PeftModel
+        print(f"[*] 載入 LoRA adapter：{model_path}")
+        model = PeftModel.from_pretrained(model, model_path)
+        model = model.merge_and_unload()   # merge for faster inference
+    else:
+        print(f"[*] 載入模型：{model_path}  (device={device}, dtype={dtype})")
+        tokenizer = AutoTokenizer.from_pretrained(model_path)
+        model     = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=dtype)
+
+    model.to(device)
+    model.eval()
+    return model, tokenizer, device
+
+
+def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
+    """Build the full prompt string for one test entry (no real password included)."""
+    from pcfg_tags import get_explanation
+
+    tokens = entry.get("Tokens", "").split("|") if entry.get("Tokens") else []
+    tags   = entry.get("Tags",   "").split("|") if entry.get("Tags")   else []
+
+    if template_id == 2:
+        from src.prompt_template import prompt_convert_structure_only
+        return prompt_convert_structure_only(entry, system_prompt)
+
+    # template_id == 1: include actual token strings (same format as training)
+    knowledge = json.dumps({
+        "This password can be segmented and tag into the following part": list(zip(tokens, tags)),
+        "For each segment, each tag represents the following meaning": {
+            tag: get_explanation(tag) for tag in set(tags)
+        }
+    }, ensure_ascii=False)
+    return system_prompt + knowledge
+
+
+def run_eval(search_cfg: dict, eval_cfg: dict):
+    from util.search import contrastive_search
+    from util.pw_tokenize import get_alpa
+    from src.prompt_template import _get_indice
+
+    # ── Model ─────────────────────────────────────────────────────────────────
+    model_path = _resolve_model_path(eval_cfg, search_cfg)
+    precision  = search_cfg.get("precistion", "full")
+    model, tokenizer, device = _load_model(model_path, precision)
+
+    # ── Vocab ─────────────────────────────────────────────────────────────────
+    vocab_dict = get_alpa(tokenizer)
+    eos_id     = tokenizer.eos_token_id
+    if search_cfg.get("vocab_limit", True):
+        char_ids   = [v for k, v in vocab_dict.items()
+                      if k not in (tokenizer.eos_token, "\t", "<", "|", ">")]
+        vocab_list = char_ids + [eos_id]
+    else:
+        vocab_list = list(range(tokenizer.vocab_size - 1)) + [eos_id]
+
+    # ── Search params ─────────────────────────────────────────────────────────
+    template_id  = search_cfg.get("prompt_template_id", 1)
+    system_prompt = _get_indice(template_id)
+    beam_width   = list(search_cfg["beam_width"])
+    search_width_cfg = search_cfg.get("search_width", None)
+    if search_width_cfg is None:
+        search_width = beam_width[:]
+    elif isinstance(search_width_cfg, int):
+        search_width = [search_width_cfg] * len(beam_width)
+    else:
+        search_width = list(search_width_cfg)
+
+    batch_size    = search_cfg.get("batch_size", 1000)
+    eos_threshold = search_cfg.get("eos_threshold", 0.001)
+    max_guess     = search_cfg.get("max_guess_number", 1000)
+    min_len       = search_cfg.get("min_len", 0)
+    alpha         = search_cfg.get("contrastive_alpha", 0.6)
+    use_contrast  = search_cfg.get("use_contrastive", True)
+
+    # ── Eval params ───────────────────────────────────────────────────────────
+    test_data_path   = PROJECT_ROOT / eval_cfg["test_data_path"]
+    max_eval_samples = eval_cfg.get("max_eval_samples", None)
+    output_dir       = PROJECT_ROOT / search_cfg.get("output_path", "gen")
+    output_file      = output_dir / eval_cfg.get("eval_output_file_name", "eval_results.jsonl")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # ── Load test data ────────────────────────────────────────────────────────
+    with open(test_data_path, "r", encoding="utf-8") as f:
+        entries = [json.loads(line) for line in f if line.strip()]
+    if max_eval_samples:
+        entries = entries[:max_eval_samples]
+    total = len(entries)
+    print(f"[*] 評估筆數：{total}  |  template_id={template_id}  |  max_guess={max_guess}")
+    print(f"[*] 輸出路徑：{output_file}\n")
+
+    # ── Eval loop ─────────────────────────────────────────────────────────────
+    all_results = []
+    with open(output_file, "w", encoding="utf-8") as out_f:
+        for i, entry in enumerate(entries):
+            real_pw     = str(entry.get("Password", ""))
+            full_prompt = _build_prompt(entry, template_id, system_prompt)
+
+            input_ids = tokenizer(
+                full_prompt, return_tensors="pt", add_special_tokens=True
+            )["input_ids"].to(device)
+
+            t0 = time.time()
+            raw_results = contrastive_search(
+                model=model,
+                input_ids=input_ids,
+                batch_size=batch_size,
+                beam_width_list=list(beam_width),
+                vocab=vocab_list,
+                eos_threshold=eos_threshold,
+                search_width_list=list(search_width),
+                use_contrastive=use_contrast,
+                contrastive_alpha=alpha,
+                min_len=min_len,
+            )
+            elapsed = time.time() - t0
+
+            # Decode and filter candidates
+            candidates = []
+            for seq, prob in raw_results:
+                decoded = tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+                if len(decoded) >= min_len:
+                    candidates.append([decoded, prob.item()])
+                if len(candidates) >= max_guess:
+                    break
+
+            decoded_pws = [pw for pw, _ in candidates]
+            rank = decoded_pws.index(real_pw) + 1 if real_pw in decoded_pws else 0
+
+            result = {
+                "index":                    i,
+                "real_password":            real_pw,
+                "tokens":                   entry.get("Tokens", ""),
+                "tags":                     entry.get("Tags",   ""),
+                "source":                   entry.get("source", ""),
+                "model_input":              full_prompt,
+                "candidates":               candidates,
+                "min_cracked_guess_number": rank,
+            }
+            out_f.write(json.dumps(result, ensure_ascii=False) + "\n")
+            all_results.append(result)
+
+            cracked_so_far = sum(1 for r in all_results if r["min_cracked_guess_number"] > 0)
+            print(
+                f"[{i+1:>4}/{total}] pw={real_pw!r:20s}  rank={rank:>5}  "
+                f"cands={len(candidates):>4}  t={elapsed:.1f}s  "
+                f"cracked={cracked_so_far}/{i+1}"
+            )
+
+    # ── Aggregate crack-rate stats ────────────────────────────────────────────
+    print("\n── Crack Rate ──────────────────────────────────────────────")
+    for k in [1, 10, 100, 1000]:
+        cracked = sum(1 for r in all_results if 0 < r["min_cracked_guess_number"] <= k)
+        print(f"  @{k:<5}: {cracked:>4} / {total}  ({cracked / total:.2%})")
+    print(f"\n[*] 結果已儲存至 {output_file}")
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Evaluation runner — reads config/search.yaml")
+    parser.add_argument(
+        "--config", type=str,
+        default=str(PROJECT_ROOT / "config" / "search.yaml"),
+        help="Search config YAML path (default: config/search.yaml)",
+    )
+    cli_args = parser.parse_args()
+
+    config     = _load_yaml(cli_args.config)
+    search_cfg = config.get("contrastive_search", {})
+    eval_cfg   = config.get("eval", {})
+
+    run_eval(search_cfg, eval_cfg)

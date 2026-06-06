@@ -4,7 +4,7 @@ from util.data import load_config, load_data, clean_data, remove_duplicates, sav
 
 if __name__ == "__main__":
     # 1. 載入設定
-    config = load_config('config.yaml')
+    config = load_config('config/config.yaml')
 
     # 2. 清洗密碼資料
     dataset = load_data(config['password_cleaning']['data_path'], config)

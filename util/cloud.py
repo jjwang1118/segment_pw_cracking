@@ -18,7 +18,7 @@ def read_voc(path):
 
 if __name__ == "__main__":
     # 1. 載入設定
-    config = load_config('config.yaml')
+    config = load_config('config/config.yaml')
     cloud_cfg = config['cloud']
     vocab_freq = read_voc(cloud_cfg['data_path'])
 
