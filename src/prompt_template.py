@@ -66,6 +66,32 @@ def prompt_convert_structure_only(data: dict, template: str) -> str:
     return template + knowledge
 
 
+def prompt_convert_token_tag(data: dict, template: str) -> str:
+    """Template A (id=1): token+tag prompt — same format used during training.
+
+    Includes the actual token strings as keys, so the model can directly
+    read the segmented characters. Useful as a sanity check (near-trivial).
+
+    Args:
+        data: dict with keys 'Tokens' and 'Tags' (pipe-separated strings).
+        template: system prompt string from _get_indice(1).
+
+    Returns:
+        Full prompt string to feed as model input.
+    """
+    tokens = data['Tokens'].split('|') if data.get('Tokens') else []
+    tags   = data['Tags'].split('|')   if data.get('Tags')   else []
+
+    knowledge = json.dumps({
+        "This password can be segmented and tag into the following part": list(zip(tokens, tags)),
+        "For each segment, each tag represents the following meaning": {
+            tag: get_explanation(tag) for tag in set(tags)
+        }
+    }, ensure_ascii=False)
+
+    return template + knowledge
+
+
 def get_prompt_template(id: int) -> str:
     """Return the system prompt string for a given template id."""
     return _get_indice(id)

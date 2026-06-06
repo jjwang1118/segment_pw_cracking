@@ -78,23 +78,13 @@ def _load_model(model_path: str, precision: str):
 
 def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
     """Build the full prompt string for one test entry (no real password included)."""
-    from pcfg_tags import get_explanation
-
-    tokens = entry.get("Tokens", "").split("|") if entry.get("Tokens") else []
-    tags   = entry.get("Tags",   "").split("|") if entry.get("Tags")   else []
-
+    if template_id == 1:
+        from src.prompt_template import prompt_convert_token_tag
+        return prompt_convert_token_tag(entry, system_prompt)
     if template_id == 2:
         from src.prompt_template import prompt_convert_structure_only
         return prompt_convert_structure_only(entry, system_prompt)
-
-    # template_id == 1: include actual token strings (same format as training)
-    knowledge = json.dumps({
-        "This password can be segmented and tag into the following part": list(zip(tokens, tags)),
-        "For each segment, each tag represents the following meaning": {
-            tag: get_explanation(tag) for tag in set(tags)
-        }
-    }, ensure_ascii=False)
-    return system_prompt + knowledge
+    raise ValueError(f"Unknown template_id: {template_id}")
 
 
 def run_eval(search_cfg: dict, eval_cfg: dict):
