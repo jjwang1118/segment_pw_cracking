@@ -1,8 +1,8 @@
 seed: 42
-dataset_path: datasets/processed
+dataset_path: datasets/processed/pos_semantic
 segment_tag_path:
   path: gen/tagged
-  kind: backoff # 可選：pos / backoff / pos_semantic
+  kind: pos_semantic # 可選：pos / backoff / pos_semantic
   dataset: [ hotmail, phpbb, 000webhost ] # 自行調整
 
 expected_ratio: 0.4

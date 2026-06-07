@@ -95,7 +95,8 @@ llm_pcfg_cracking model/
 ├── config/
 │   ├── config.yaml               # BPE training + password cleaning + wordcloud
 │   ├── tokenize_setting.yaml     # Tokenizer inference + PCFG tagging settings
-│   └── train_config.yaml         # LLM training hyperparams + LoRA config
+│   ├── train_config.yaml         # LLM training hyperparams + LoRA config
+│   └── search.yaml               # Contrastive search params + eval settings
 ├── src/
 │   ├── BPE.py                    # BPE tokenizer training (Standard + PwdSegment)
 │   ├── Tokenize.py               # BPE inference + PCFG tag pipeline
@@ -136,6 +137,7 @@ llm_pcfg_cracking model/
 ├── trainBPE.py                   # Entry point: Stage 2
 ├── run_tokenize.py               # Entry point: Stage 3
 ├── run_train.py                  # Entry point: Stage 5
+├── run_search.py                 # Entry point: Password generation (contrastive search, no eval)
 ├── run_eval.py                   # Entry point: Evaluation (structure → candidates → crack rate)
 └── pcfg_tags.py                  # PCFG tag definitions + get_explanation()
 ```
@@ -191,7 +193,7 @@ expected_ratio: 0.4         # Fraction of data to sample
 split_ratio: 0.2            # Test set fraction
 
 train:
-  prompt_template_id: 0
+  prompt_template_id: 1
   train_config:
     model_name: Llama-3.2-3B-Instruct
     model_path: models
@@ -226,8 +228,9 @@ train:
 | `util/Dataprocess.py` | `load_tagged_data()`, `sample_data()`, `split_train_test()` → writes JSONL |
 | `util/search.py` | Contrastive search inference with custom 95-char vocabulary remapping |
 | `run_eval.py` | Evaluation entry point: reads test JSONL, runs per-password contrastive search, outputs crack metrics |
+| `run_search.py` | Generation-only entry point: contrastive search without ground-truth evaluation |
 | `pcfg_tags.py` | `get_explanation(tag)` — pattern-based lookup for all tag types |
-| `src/prompt_template.py` | `prompt_convert(data, template)` — builds full training prompt with knowledge JSON |
+| `src/prompt_template.py` | `prompt_convert_token_tag()` (id=1): token+tag prompt; `prompt_convert_structure_only()` (id=2): structure-only prompt; `get_prompt_template(id)` |
 
 ---
 
@@ -245,10 +248,14 @@ train:
 
 ## LLM Training Details
 
-**Prompt structure per training sample:**
+**Prompt structure per training sample (id=1 `prompt_convert_token_tag`):**
 ```
-[System]: As a targeted password guessing model...
-[User]: {"dragon": "noun (nn)", "99": "2-digit number", "!": "1 special char"}
+[System]: As a targeted password guessing model, your task is to generate likely
+          password candidates based on the structural pattern and segment information...
+[User]: {"This password can be segmented and tag into the following part":
+           [["dragon","nn"],["99","number2"],["!","special1"]],
+         "For each segment, each tag represents the following meaning":
+           {"nn": "...", "number2": "...", "special1": "..."}}
 [Assistant]: d r a g o n 9 9 !   ← only these tokens produce loss
 ```
 
@@ -368,10 +375,10 @@ External (must be cloned/linked manually):
 
 ---
 
-## Current Training Status (2026-06-06)
+## Current Training Status (2026-06-07)
 
-- **run_1** (old): `checkpoints/Llama-3.2-3B-Instruct/checkpoint-2517`, prompt `id=0`
-- **run_2** (current): `checkpoints/Llama-3.2-3B-Instruct/run_2/`, prompt `id=1`, in progress (~2514 steps)
+- **run_1** (廢棄): `checkpoints/Llama-3.2-3B-Instruct/checkpoint-2517`, prompt `id=0` — prompt template 與實際訓練格式不一致，已廢棄重訓
+- **run_5 → run_2** (current): checkpoints 目前存於 `checkpoints/Llama-3.2-3B-Instruct/run_5/`（訓練進行中），最終將輸出至 `run_2/lora_final`，prompt `id=1`, tag type `backoff` — 以 backoff 結構標籤重新訓練，為目前主線版本
 - Training runs at ~200 steps/3h on RTX 5070
 - Recent optimizations in `docs/logs/20260606_modify.md`:
   - `enable_input_require_grads()` for gradient_checkpointing + LoRA compatibility
@@ -380,3 +387,9 @@ External (must be cloned/linked manually):
   - `<`, `|`, `>` excluded from inference vocab to prevent `<|special|>` token artifacts
   - `min_len` guard in contrastive beam search to prevent short outputs
   - Auto-increment `run_N` directory structure for checkpoints
+
+## Future Work
+
+- **run_3** (planned): fine-tune with `pos` tag type (CLAWS7 POS tags: `nn`, `vv0`, `np`, etc.) — validate whether linguistic POS information improves crack rate vs `backoff` baseline
+- **run_4** (planned): fine-tune with `pos_semantic` tag type (WordNet synsets: `s.love.v.01`, etc.) — test high-semantic-content tagging for targeted cracking
+- Target experiment: compare Crack rate @ K across `backoff` / `pos` / `pos_semantic` on the same test set to quantify the relationship between tag semantic richness and crack rate

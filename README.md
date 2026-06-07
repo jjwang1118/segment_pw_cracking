@@ -187,14 +187,37 @@ As a targeted password guessing model... no actual characters are provided...
  "segment details": {"position 1": "介詞/連接詞 (ii)", "position 2": "2字元字母串 (char2)", ...}}
 ```
 
-### 推論流程
+### 推論流程（以 `prompt_template_id=1` 為例）
 
 ```
 測試資料: {Password: "indianglaze1", Tokens: "in|di|ang|laz|e1", Tags: "ii|char2|char3|char3|mixed2"}
                           ↓
-   依 prompt_template_id 建構 prompt【真實密碼不輸入給模型】
+   依 prompt_template_id=1 建構 prompt
+   → 系統提示 + {token字串: tag說明} 知識 JSON【真實密碼不輸入給模型】
                           ↓
    input_ids = tokenize(系統提示 + knowledge JSON)
+                          ↓
+   candidates = contrastive_search(model, input_ids)
+   → 最多 1000 個候選密碼，依機率降序排列
+                          ↓
+   若真實密碼出現在候選中 → min_cracked_guess_number = 排名（1起算）
+   否則                   → min_cracked_guess_number = 0（未破解）
+```
+
+### 推論流程（以 `prompt_template_id=2` 為例）
+
+模式 2 為**泛化測試**：不提供 token 字串本身，只給結構標籤，測試模型能否僅憑字元類型描述生成正確密碼。
+
+```
+測試資料: {Password: "indianglaze1", Tokens: "in|di|ang|laz|e1", Tags: "ii|char2|char3|char3|mixed2"}
+                          ↓
+   依 prompt_template_id=2 建構 prompt
+   → 系統提示 + {"password structure": "(ii)(char2)(char3)(char3)(mixed2)",
+                  "segment details": {"position 1": "介詞/連接詞 (ii)",
+                                      "position 2": "2字元字母串 (char2)", ...}}
+   【不提供 token 字串；真實密碼不輸入給模型】
+                          ↓
+   input_ids = tokenize(系統提示 + structure JSON)
                           ↓
    candidates = contrastive_search(model, input_ids)
    → 最多 1000 個候選密碼，依機率降序排列
@@ -241,6 +264,31 @@ python run_eval.py
   "min_cracked_guess_number": 3
 }
 ```
+
+---
+
+## 訓練紀錄
+
+| Run | Tag 類型 | Prompt Template | 備註 |
+|---|---|---|---|
+| run_1 | — | `id=0` | 模板格式與實際訓練格式不一致，廢棄重訓 |
+| run_5 → run_2 | `backoff` | `id=1` | 以 backoff 結構標籤訓練，為目前主線版本 |
+
+- **run_1**：因 prompt template (`id=0`) 與訓練時實際格式不符，導致模型學習到錯誤的輸入結構，已廢棄。
+- **run_5 / run_2**：改用 `backoff` tag 類型（純字元結構標籤：`number2`、`char4`、`special1`、`mixed3` 等）搭配 `prompt_template_id=1` 重新訓練，為目前使用的版本。
+
+---
+
+## Future Work
+
+目前訓練僅使用 `backoff` tag 類型作為結構標籤。未來計畫針對另外兩種 tag 類型進行獨立的 fine-tune，以量化語意資訊對破解率的影響：
+
+| 計畫 Run | Tag 類型 | 說明 |
+|---|---|---|
+| run_3（計畫中） | `pos` | 使用 CLAWS7 詞性標籤（`nn`、`vv0`、`np` 等）進行訓練，驗證語言學詞性資訊是否提升 crack rate |
+| run_4（計畫中） | `pos_semantic` | 使用 WordNet synset 語意標籤（`s.love.v.01` 等）進行訓練，測試高語意資訊的破解效果 |
+
+預期比較實驗：`backoff` vs `pos` vs `pos_semantic` 在相同測試集上的 Crack rate @ K，以驗證「標籤語意資訊量 vs 破解率」的假設。
 
 ---
 
