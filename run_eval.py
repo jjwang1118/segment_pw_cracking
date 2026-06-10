@@ -87,8 +87,8 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
     raise ValueError(f"Unknown template_id: {template_id}")
 
 
-def run_eval(search_cfg: dict, eval_cfg: dict):
-    from util.search import contrastive_search
+def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_search"):
+    from util.search import contrastive_search, dynamic_beam_search
     from util.pw_tokenize import get_alpa
     from src.prompt_template import _get_indice
 
@@ -154,18 +154,30 @@ def run_eval(search_cfg: dict, eval_cfg: dict):
             )["input_ids"].to(device)
 
             t0 = time.time()
-            raw_results = contrastive_search(
-                model=model,
-                input_ids=input_ids,
-                batch_size=batch_size,
-                beam_width_list=list(beam_width),
-                vocab=vocab_list,
-                eos_threshold=eos_threshold,
-                search_width_list=list(search_width),
-                use_contrastive=use_contrast,
-                contrastive_alpha=alpha,
-                min_len=min_len,
-            )
+            if search_type == "dynamic_beam_search":
+                raw_results = dynamic_beam_search(
+                    model=model,
+                    input_ids=input_ids,
+                    batch_size=batch_size,
+                    beam_width_list=list(beam_width),
+                    vocab=vocab_list,
+                    eos_threshold=eos_threshold,
+                    search_width_list=list(search_width),
+                    min_len=min_len,
+                )
+            else:
+                raw_results = contrastive_search(
+                    model=model,
+                    input_ids=input_ids,
+                    batch_size=batch_size,
+                    beam_width_list=list(beam_width),
+                    vocab=vocab_list,
+                    eos_threshold=eos_threshold,
+                    search_width_list=list(search_width),
+                    use_contrastive=use_contrast,
+                    contrastive_alpha=alpha,
+                    min_len=min_len,
+                )
             elapsed = time.time() - t0
 
             # Decode and filter candidates
@@ -199,7 +211,8 @@ def run_eval(search_cfg: dict, eval_cfg: dict):
                 f"cands={len(candidates):>4}  t={elapsed:.1f}s  "
                 f"cracked={cracked_so_far}/{i+1}"
             )
-
+            # clean gpu memory after each entry to avoid OOM
+            torch.cuda.empty_cache()
     # ── Aggregate crack-rate stats ────────────────────────────────────────────
     print("\n── Crack Rate ──────────────────────────────────────────────")
     for k in [1, 10, 100, 1000]:
@@ -219,8 +232,15 @@ if __name__ == "__main__":
     )
     cli_args = parser.parse_args()
 
-    config     = _load_yaml(cli_args.config)
-    search_cfg = config.get("contrastive_search", {})
-    eval_cfg   = config.get("eval", {})
+    config      = _load_yaml(cli_args.config)
+    search_type = config.get("search_type", "contrastive_search")
+    _CANONICAL = {
+        "constrative_search": "contrastive_search",
+        "contrastive_search": "contrastive_search",
+        "dynamic_beam_search": "dynamic_beam_search",
+    }
+    canonical   = _CANONICAL.get(search_type, "contrastive_search")
+    search_cfg  = config.get(search_type) or config.get(canonical) or {}
+    eval_cfg    = config.get("eval", {})
 
-    run_eval(search_cfg, eval_cfg)
+    run_eval(search_cfg, eval_cfg, search_type=canonical)

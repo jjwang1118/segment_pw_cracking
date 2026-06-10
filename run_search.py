@@ -133,17 +133,92 @@ def run_contrastive_search(cfg):
     print(f"[*] 結果已儲存至 {output_file}")
 
 
+def run_dynamic_beam_search(cfg):
+    from util.search import dynamic_beam_search
+    from util.pw_tokenize import get_alpa
+    from src.prompt_template import _get_indice
+
+    model_path = _resolve_model_path(cfg)
+    precision = cfg.get("precistion", "full")
+    model, tokenizer, device = _load_model(model_path, precision)
+
+    vocab_dict = get_alpa(tokenizer)
+    eos_id = tokenizer.eos_token_id
+    if cfg.get("vocab_limit", True):
+        char_ids = [v for k, v in vocab_dict.items() if k not in (tokenizer.eos_token, "\t", "<", "|", ">")]
+        vocab_list = char_ids + [eos_id]
+    else:
+        vocab_list = list(range(tokenizer.vocab_size - 1)) + [eos_id]
+
+    prompt_text = _get_indice(cfg.get("prompt_template_id", 0))
+    input_ids = tokenizer(
+        prompt_text, return_tensors="pt", add_special_tokens=True
+    )["input_ids"]
+
+    beam_width = list(cfg["beam_width"])
+    search_width_cfg = cfg.get("search_width", None)
+    if search_width_cfg is None:
+        search_width = beam_width[:]
+    elif isinstance(search_width_cfg, int):
+        search_width = [search_width_cfg] * len(beam_width)
+    else:
+        search_width = list(search_width_cfg)
+
+    batch_size = cfg.get("batch_size", 1000)
+    eos_threshold = cfg.get("eos_threshold", 0.001)
+    max_guess = cfg.get("max_guess_number", None)
+    min_len = cfg.get("min_len", 0)
+
+    print(
+        f"[*] 搜索參數：beam_width[0]={beam_width[0]}, max_length={len(beam_width)}, "
+        f"batch_size={batch_size}, eos_threshold={eos_threshold}"
+    )
+
+    start_time = time.time()
+    results = dynamic_beam_search(
+        model=model,
+        input_ids=input_ids,
+        batch_size=batch_size,
+        beam_width_list=beam_width,
+        vocab=vocab_list,
+        eos_threshold=eos_threshold,
+        search_width_list=search_width,
+        min_len=min_len,
+    )
+    elapsed = time.time() - start_time
+
+    if max_guess:
+        results = results[:max_guess]
+
+    print(f"[*] 完成：找到 {len(results)} 個候選，耗時 {elapsed:.2f}s")
+
+    output_dir = PROJECT_ROOT / cfg.get("output_path", "gen")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / cfg.get("output_file_name", "dynamic_beam_search_results.jsonl")
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        for seq, prob in results:
+            decoded = tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+            if len(decoded) < min_len:
+                continue
+            f.write(json.dumps({"password": decoded, "log_prob": prob.item()}, ensure_ascii=False) + "\n")
+
+    print(f"[*] 結果已儲存至 {output_file}")
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 # Maps search_type string → handler function.
 # Duplicate keys handle common typos ("constrative" vs "contrastive").
 _DISPATCHERS = {
     "contrastive_search": run_contrastive_search,
     "constrative_search": run_contrastive_search,
+    "dynamic_beam_search": run_dynamic_beam_search,
 }
 
 _CANONICAL_NAMES = {
     "contrastive_search": "contrastive_search",
     "constrative_search": "contrastive_search",
+    "dynamic_beam_search": "dynamic_beam_search",
 }
 
 

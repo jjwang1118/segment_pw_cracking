@@ -30,9 +30,12 @@ def encode_limit(input_str,vocab):
         "attention_mask": [1 for i in range(len(ret))]
     }
 
-def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512):
+def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, template_id=1):
     """Batched preprocessing: batch is a dict of lists (batched=True in dataset.map).
-    prompt_ids must be pre-computed once outside the map call."""
+    prompt_ids must be pre-computed once outside the map call.
+    template_id=1: token+tag pairs (training format A)
+    template_id=2: structure-only, no token strings (training format B)
+    """
     passwords   = batch.get("Password", batch.get("passwords", []))
     tokens_col  = batch.get("Tokens", [])
     tags_col    = batch.get("Tags", [])
@@ -48,12 +51,21 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512):
         token_list = tokens.split("|") if tokens else []
         tag_list   = tags.split("|")   if tags   else []
 
-        knowledge_text = json.dumps({
-            "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),
-            "For each segment, each tag represents the following meaning": {
-                tag: get_explanation(tag) for tag in set(tag_list)
-            }
-        }, ensure_ascii=False)
+        if template_id == 2:
+            knowledge_text = json.dumps({
+                "password structure": "(" + ")(".join(tag_list) + ")",
+                "segment details": {
+                    f"position {i + 1}": f"{get_explanation(tag)} ({tag})"
+                    for i, tag in enumerate(tag_list)
+                }
+            }, ensure_ascii=False)
+        else:
+            knowledge_text = json.dumps({
+                "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),
+                "For each segment, each tag represents the following meaning": {
+                    tag: get_explanation(tag) for tag in set(tag_list)
+                }
+            }, ensure_ascii=False)
         knowledge_ids = tokenizer(knowledge_text, add_special_tokens=False)["input_ids"]
         password_ids  = encode_limit(password, vocab)["input_ids"]
 

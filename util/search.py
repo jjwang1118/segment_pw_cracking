@@ -94,6 +94,161 @@ def predict_next(model, vocab, input_ids, past_key_values=None):
 
 
 
+class DBS_Beam:
+    """Pure beam search state (no contrastive penalty)."""
+    def __init__(self, info_cache: DynamicCache, vocab_tensor: torch.Tensor, device):
+        self.info_cache = info_cache
+        self.pw_cache = None
+        self.pw_idx = torch.empty(1, 0, device=device, dtype=torch.int)
+        self.beam_prob = torch.zeros(1, 1, device=device, dtype=torch.double)
+        self.search_prob = torch.zeros(1, 1, device=device, dtype=torch.double)
+        self.vocab_tensor = vocab_tensor
+        self.device = device
+
+    def return_beam_width(self):
+        return self.pw_idx.shape[0]
+
+    def update_by_prob(self, beam_width, search_width: int, probs: torch.Tensor, pw_past_key_values):
+        tot_probs = (self.beam_prob.reshape(-1, 1) + probs).reshape(-1)
+
+        self.search_prob, search_idx = torch.topk(tot_probs, search_width, largest=True)
+        self.beam_prob, _ = torch.topk(tot_probs, beam_width, largest=True)
+        self.search_prob = self.search_prob.reshape(-1, 1)
+        self.beam_prob = self.beam_prob.reshape(-1, 1)
+
+        self.last_beam_index = search_idx // (self.vocab_tensor.shape[0] - 1)
+        word_index = torch.remainder(search_idx, self.vocab_tensor.shape[0] - 1)
+
+        self.pw_idx = torch.cat([
+            self.pw_idx[self.last_beam_index],
+            self.vocab_tensor[word_index].reshape(-1, 1)
+        ], dim=1)
+
+        self.pw_cache = pw_past_key_values
+
+
+@torch.no_grad()
+def dynamic_beam_search(
+    model: AutoModelForCausalLM,
+    input_ids: torch.Tensor,
+    batch_size: int,
+    beam_width_list: list,
+    vocab: list,
+    eos_threshold: float,
+    search_width_list: list = [],
+    sorted: bool = True,
+    min_len: int = 0,
+):
+    """
+    Dynamic beam search without contrastive penalty.
+    Faster than contrastive_search; suitable for baseline comparison.
+    """
+    if not search_width_list:
+        search_width_list = beam_width_list
+
+    device = model.device
+    eos_threshold = torch.tensor(math.log(eos_threshold), device=device)
+
+    input_ids = input_ids.reshape(1, -1).to(device=device)
+    reorder_info_cache_index = torch.zeros(batch_size, device=device, dtype=torch.int)
+
+    max_length = len(beam_width_list)
+    pw_silce_index = torch.arange(
+        input_ids.shape[1], input_ids.shape[1] + max_length, device=device, dtype=torch.int
+    )
+    vocab_tensor = torch.tensor(vocab, device=device, dtype=torch.int)
+    vocab_size = len(vocab)
+    
+    outputs = model.forward(
+        input_ids=input_ids,
+        past_key_values=DynamicCache(),
+        use_cache=True,
+        output_attentions=False,
+    )
+    logits = remap_logits(vocab_tensor, outputs.logits)[:, -1, :]
+    info_cache = outputs.past_key_values
+    del outputs
+
+    word_probs = torch.nn.functional.log_softmax(logits, dim=1)
+    eos_list = []
+    word_probs = word_probs[:, :-1]
+
+    pw_past_key_values = None
+    beam = DBS_Beam(info_cache, vocab_tensor, device)
+    beam_width_list[0] = min(beam_width_list[0], vocab_size - 1)
+    for i in range(1, len(beam_width_list)):
+        beam_width_list[i] = min(beam_width_list[i], beam_width_list[i - 1] * (vocab_size - 1))
+    search_width_list[0] = min(search_width_list[0], vocab_size - 1)
+    for i in range(1, len(search_width_list)):
+        search_width_list[i] = min(search_width_list[i], beam_width_list[i - 1] * (vocab_size - 1))
+    
+    for l in range(max_length):
+        reserve_width = max(beam_width_list[l], search_width_list[l])
+        forward_num = math.ceil(reserve_width / batch_size)
+        beam_forward_num = math.ceil(beam_width_list[l] / batch_size)
+
+        beam.update_by_prob(beam_width_list[l], reserve_width, word_probs, pw_past_key_values)
+
+        print(f"[layer {l+1:>2}/{max_length}] beams={beam_width_list[l]}, found={len(eos_list)}", flush=True)
+
+        word_probs = torch.empty(0, vocab_size - 1, device=device)
+        pw_past_key_values = None
+
+        for i in range(forward_num):
+            if i < beam_forward_num:
+                start, end = i * batch_size, min((i + 1) * batch_size, beam_width_list[l])
+            else:
+                start = beam_width_list[l] + (i - beam_forward_num) * batch_size
+                end = min(beam_width_list[l] + (i - beam_forward_num + 1) * batch_size, reserve_width)
+
+            input_seqs = beam.pw_idx[start:end, :]
+            input_ids = beam.pw_idx[start:end, -1:]
+
+            cache = _cache_concat(
+                _reorder_cache(beam.info_cache, reorder_info_cache_index[:end - start]),
+                _reorder_cache(beam.pw_cache, beam.last_beam_index[start:end])
+            )
+
+            outputs = model.forward(
+                input_ids=input_ids,
+                past_key_values=cache,
+                use_cache=True,
+                output_attentions=False,
+            )
+            del cache
+            logits = remap_logits(vocab_tensor, outputs.logits)[:, -1, :]
+            batch_word_probs = torch.nn.functional.log_softmax(logits, dim=1)
+
+            if i < beam_forward_num:
+                batch_pw_past_key_values = _cache_slice(outputs.past_key_values, pw_silce_index[:l + 1])
+                word_probs = torch.cat([word_probs, batch_word_probs[:, :-1]], dim=0)
+                pw_past_key_values = _merge_cache(pw_past_key_values, batch_pw_past_key_values)
+
+            del outputs
+
+            batch_eos_over_threshold_index = (
+                torch.where(batch_word_probs[:, -1] >= eos_threshold)[0]
+                if l >= min_len - 1
+                else torch.empty(0, dtype=torch.long, device=device)
+            )
+            if batch_eos_over_threshold_index.shape[0] != 0:
+                eos_seqs = torch.cat([
+                    input_seqs[batch_eos_over_threshold_index, :],
+                    vocab_tensor[-1].repeat(batch_eos_over_threshold_index.shape[0], 1)
+                ], dim=1)
+
+                batch_eos_probs = (
+                    beam.search_prob[start:end, :] + batch_word_probs[:, -1:]
+                )[batch_eos_over_threshold_index]
+
+                eos_list.extend(zip(eos_seqs, batch_eos_probs))
+
+    if sorted:
+        eos_list.sort(key=lambda x: x[1], reverse=True)
+
+    return eos_list
+
+
 class DBS_beam_contrastive_search:
     def __init__(self, info_cache: tuple, vocab_tensor: torch.Tensor, device, initial_hidden: torch.Tensor):
         """

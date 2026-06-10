@@ -10,7 +10,7 @@ from transformers import (
     Trainer,
 )
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, TaskType
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,6 +47,7 @@ def build_model_and_tokenizer(config: dict):
 
 def apply_lora(model, lora_cfg: dict):
     lora_config = LoraConfig(
+        task_type=TaskType.CAUSAL_LM,
         r=lora_cfg["r"],
         lora_alpha=lora_cfg["lora_alpha"],
         init_lora_weights=lora_cfg["init_lora_weights"],

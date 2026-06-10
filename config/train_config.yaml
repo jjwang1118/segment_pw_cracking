@@ -1,15 +1,15 @@
 seed: 42
-dataset_path: datasets/processed/pos_semantic
+dataset_path: datasets/processed/semanticPCFG/backoff
 segment_tag_path:
-  path: gen/tagged
-  kind: pos_semantic # 可選：pos / backoff / pos_semantic
+  path: gen/semanticPCFG
+  kind: backoff # 可選：pos / backoff / pos_semantic
   dataset: [ hotmail, phpbb, 000webhost ] # 自行調整
 
 expected_ratio: 0.4
 split_ratio: 0.2
 
 train:
-  prompt_template_id: 1
+  prompt_template_id: 2
 
   train_config:
     model_name: Llama-3.2-3B-Instruct

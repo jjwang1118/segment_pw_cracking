@@ -1,170 +1,251 @@
 # LLM PCFG Cracking Model
 
 基於大型語言模型（LLM）與概率上下文無關文法（PCFG）的密碼破解模型。  
-核心流程：先用 BPE Tokenizer 將密碼分割成有意義的子字串（token），再透過 semantic-guesser 的 PCFG 對每個 token 貼上語義標籤，最終以此訓練 LLM 生成符合密碼分佈的候選密碼。
+核心流程：將密碼切分為有意義的子字串（token），再透過 `semantic-guesser` 的 PCFG 對每個 token 貼上語義標籤，以此訓練 LLM 生成符合密碼分佈的候選密碼。
+
+**切分方式（兩條路）：**
+- **BPE（legacy）**：以字元頻率合併的 Byte-Pair Encoding，切出 `drag|on|99|!`（任意切）
+- **PCFG-native（current）**：用 PCFG 自己的 regex + `wordsegment`，切出 `dragon|99|!`（依字元類別切）
+
+PCFG-native 的切分結果與標籤語意一致，是目前主線方法。
 
 ---
 
 ## 專案結構
 
 ```
-├── config.yaml                  # 全域設定檔（BPE、資料清洗、詞雲）
-├── tokenize_setting.yaml        # Tokenize + PCFG 貼標籤設定檔
-├── processData.py               # 密碼資料清洗與預處理
-├── trainBPE.py                  # BPE Tokenizer 訓練入口
-├── run_tokenize.py              # Tokenize + PCFG 貼標籤執行入口
+├── config/
+│   ├── config.yaml              # BPE 訓練 + 資料清洗 + 詞雲設定
+│   ├── tokenize_setting.yaml    # BPE Tokenize + PCFG 貼標籤設定（BPE path）
+│   ├── pcfg_segment.yaml        # PCFG-native 切分 + 貼標籤設定（current）
+│   ├── train_config.yaml        # LLM 訓練超參數 + LoRA 設定
+│   └── search.yaml              # 搜索方法選擇 + 推論 + 評估設定
 ├── src/
 │   ├── BPE.py                   # BPE 模型建構（標準模式 + PwdSegment 模式）
-│   └── Tokenize.py              # Tokenizer 推論 + PCFG 貼標籤
+│   ├── Tokenize.py              # BPE 推論 + PCFG 貼標籤（BPE path）
+│   ├── PCFGSegment.py           # PCFG-native 切分器（PCFGSegmenter class）
+│   └── prompt_template.py       # LLM prompt 模板
 ├── util/
 │   ├── data.py                  # 資料載入、清洗、去重工具
 │   ├── trainTokenizer.py        # Tokenizer 訓練分派器
-│   └── cloud.py                 # 詞彙頻率詞雲視覺化
-├── datasets/                    # 原始密碼資料集（每行一個密碼，gitignore）
-├── models/                      # 訓練產物（gitignore）
-└── gen/                         # 生成圖片輸出
+│   ├── cloud.py                 # 詞彙頻率詞雲視覺化
+│   ├── Dataprocess.py           # JSONL 分割 + 長度分佈（BPE path）
+│   ├── pw_tokenize.py           # 字元級編碼 + 訓練批次預處理
+│   ├── train.py                 # LLM 訓練流程（載入模型、LoRA、Trainer）
+│   ├── search.py                # 推論：dynamic_beam_search + contrastive_search
+│   └── analyze.py               # Token 分析（Zipf 定律、跨資料集統計）
+├── datasets/
+│   ├── *.txt                    # 原始密碼資料集（每行一個密碼）
+│   ├── cleaned/{dataset}/       # Stage 1 清洗後輸出
+│   ├── processed/{tagtype}/split/               # BPE path JSONL
+│   └── processed/semanticPCFG/{tagtype}/split/  # PCFG-native path JSONL
+├── models/
+│   ├── tokenizer/{dataset}/     # BPE tokenizer 輸出
+│   ├── semantic-guesser/        # 外部 PCFG tagger（兩條 path 都需要）
+│   └── Llama-3.2-3B-Instruct/  # 基礎 LLM 權重
+├── checkpoints/                 # LoRA checkpoint 輸出
+├── gen/
+│   ├── tokenized/               # BPE tokenization CSV
+│   ├── tagged/                  # BPE path 貼標籤 CSV（3 tagtype × 3 dataset）
+│   └── semanticPCFG/            # PCFG-native path 貼標籤 CSV（3 tagtype × 3 dataset）
+├── pcfg_tags.py                 # PCFG tag 定義 + get_explanation()
+├── processData.py               # Stage 1：密碼清洗（兩條 path 共用）
+├── trainBPE.py                  # Stage 2：BPE Tokenizer 訓練（BPE path only）
+├── run_tokenize.py              # Stage 3：BPE 切分 + PCFG 貼標籤（BPE path）
+├── run_pcfg_segment.py          # PCFG-native 切分 + 貼標籤 + 分割（current）
+├── run_train.py                 # LLM 微調（兩條 path 共用）
+├── run_search.py                # 密碼生成（無評估）
+└── run_eval.py                  # 評估（crack rate）
 ```
 
 ---
 
 ## 執行流程
 
-### Step 1：資料清洗
+### Pipeline A — BPE 切分（legacy）
+
+```
+processData.py → trainBPE.py → run_tokenize.py → util/Dataprocess.py → run_train.py
+```
+
+### Pipeline B — PCFG-native 切分（current）
+
+```
+processData.py → run_pcfg_segment.py → run_train.py
+```
+
+Pipeline B 以單一腳本取代 Step 2–4，不需要 BPE tokenizer。
+
+---
+
+### Step 1：資料清洗（兩條 path 共用）
 ```bash
 python processData.py
 ```
-讀取 `datasets/` 下的原始密碼檔（`.txt`），依 `config.yaml` 的 `password_cleaning` 設定進行過濾與去重。  
-輸出：`datasets/cleaned/<dataset>/`
+依 `config.yaml` 的 `password_cleaning` 設定過濾與去重。  
+輸出：`datasets/cleaned/{dataset}/cleaned_data.txt`
 
-### Step 2：訓練 BPE Tokenizer
+---
+
+### Step 2（Pipeline A）：訓練 BPE Tokenizer
 ```bash
 python trainBPE.py
 ```
-輸出至 `models/tokenizer/<dataset>/`：
+輸出至 `models/tokenizer/{dataset}/`：`tokenizer.json`、`vocab_freq.json`、`vocab_with_freq.json`、`merged_vocab.json`
 
-| 檔案 | 說明 |
-|---|---|
-| `tokenizer.json` | HuggingFace 標準格式，含 vocab + merge rules，供模型使用 |
-| `vocab_freq.json` | 所有 token 的出現頻率 |
-| `vocab_with_freq.json` | 所有 token 含 id + 頻率，依頻率排序 |
-| `merged_vocab.json` | 僅合併後的多字元 token（length ≥ 2），依頻率排序 |
+---
 
-### Step 3：Tokenize + PCFG 貼標籤
-
-#### 前置：安裝 semantic-guesser
-```bash
-git clone https://github.com/vialab/semantic-guesser ../semantic-guesser
-cd ../semantic-guesser
-pip install -r requirements.txt
-cd -
-```
-
-#### 執行
+### Step 3（Pipeline A）：BPE 切分 + PCFG 貼標籤
 ```bash
 python run_tokenize.py
 ```
+對每個密碼的 BPE token 貼上 PCFG 語義標籤。
 
-對每個密碼的 BPE token 貼上 PCFG 語義標籤，輸出兩份 CSV：
+輸出：
+- `gen/tokenized/{dataset}_tokenized.csv`
+- `gen/tagged/{dataset}_{tagtype}_tagged.csv`
 
-| 輸出檔案 | 說明 |
-|---|---|
-| `datasets/tokenized/<dataset>_tokenized_passwords.csv` | 密碼 + token 列表 |
-| `datasets/tokenized/<dataset>_tagged_passwords.csv` | 密碼 + token + 標籤 + 結構字串 |
+**切分範例（BPE）：** `dragon99!` → `drag|on|99|!` → `char4|char2|number2|special1`
 
-輸出範例：
+---
 
-| Password | Tokens | Tags | Structure |
-|---|---|---|---|
-| `dragon99!` | `['dragon', '99', '!']` | `['nn', 'number2', 'special1']` | `(nn)(number2)(special1)` |
-| `iloveyou` | `['i', 'love', 'you']` | `['nn', 'vv0', 'nn']` | `(nn)(vv0)(nn)` |
-
-### Step 4：詞雲視覺化
+### Step 2+3（Pipeline B）：PCFG-native 切分 + 貼標籤 + 分割
 ```bash
-python util/cloud.py
+# 全部 tagtype × 全部 dataset
+python run_pcfg_segment.py
+
+# 只跑單一 tagtype
+python run_pcfg_segment.py --tagtype backoff
+
+# CSV 已存在，只重做 train/test 分割
+python run_pcfg_segment.py --split-only
 ```
-讀取 `vocab_with_freq.json`，取前 `top_k` 個 token 生成詞雲。  
-輸出：`gen/cloud/<dataset>.png`
+
+分兩個 Stage：
+- **Stage A**（打標）：讀 `datasets/cleaned/{dataset}/cleaned_data.txt` → PCFG 切分 + 貼標 → CSV
+- **Stage B**（分割）：合併所有 dataset → 過濾長度 → 取樣 → train/test 分割 → JSONL
+
+輸出：
+- `gen/semanticPCFG/{dataset}_{tagtype}_tagged.csv`
+- `datasets/processed/semanticPCFG/{tagtype}/split/train_data.jsonl`
+- `datasets/processed/semanticPCFG/{tagtype}/split/test_data.jsonl`
+
+**切分範例（PCFG-native）：** `dragon99!` → `dragon|99|!` → `nn|number2|special1`
 
 ---
 
-## BPE 模式說明
+### Step 4（Pipeline A only）：資料集分割
+```bash
+python util/Dataprocess.py
+```
+讀取 `gen/tagged/` 下所有 tagged CSV，依 `expected_ratio` 取樣、`split_ratio` 分割。  
+輸出：`datasets/processed/{tagtype}/split/train_data.jsonl`、`test_data.jsonl`
 
-本專案支援兩種 BPE 訓練模式，由 `config.yaml` 的 `avg_len` 欄位控制：
-
-| 模式 | `avg_len` 設定 | 停止條件 | 用途 |
-|---|---|---|---|
-| 標準模式 | `null` | 達到 `vocab_size` | 一般用途 |
-| PwdSegment 細粒度 | `1.8` | 詞彙平均長度 ≥ 1.8 | CKL_Backoff、CKL_FLA |
-| PwdSegment 粗粒度 | `4.5` | 詞彙平均長度 ≥ 4.5 | CKL_PCFG |
-
-PwdSegment 模式實作自 Ming Xu et al. CCS'21，以詞彙表平均 token 長度作為停止條件，使分割結果更符合密碼的語義結構。
+> run_pcfg_segment.py 的 Stage B 取代原本 Dataprocess.py 做的事
 
 ---
 
-## 主要設定
+### Step 5：LLM 微調（兩條 path 共用）
+```bash
+python run_train.py
+```
 
-### config.yaml（BPE 訓練與資料清洗）
+修改 `config/train_config.yaml` 切換資料來源：
+
+| 切分方式 | `dataset_path` | `segment_tag_path.path` |
+|---|---|---|
+| BPE path | `datasets/processed/backoff` | `gen/tagged` |
+| PCFG-native path | `datasets/processed/semanticPCFG/backoff` | `gen/semanticPCFG` |
+
+每筆訓練樣本包含 System prompt + Knowledge JSON（`{token: tag說明}`）+ 密碼（逐字元編碼），loss 只計算在密碼 token 上。  
+輸出：`checkpoints/Llama-3.2-3B-Instruct/run_N/`
+
+---
+
+### Step 6：密碼生成
+```bash
+python run_search.py
+```
+不需要 ground-truth，直接生成候選密碼列表。  
+輸出：`gen/{output_file_name}.jsonl`
+
+---
+
+### Step 7：評估（Crack Rate）
+```bash
+python run_eval.py
+```
+對 `test_data.jsonl` 中每筆密碼，以 Tokens + Tags 作為 prompt（不給模型看真實密碼），生成候選並計算 crack rate。  
+輸出：`gen/eval_results.jsonl`，並列印 Crack Rate @ 1 / 10 / 100 / 1000。
+
+---
+
+## PCFG Tag 類型
+
+| tagtype | 範例 tag | 說明 |
+|---|---|---|
+| `backoff` | `number2`, `char4`, `special1`, `mixed3` | 結構性字元類別（長度+類型） |
+| `pos` | `nn`, `vv0`, `np`, `jj` | CLAWS7 詞性標籤 |
+| `pos_semantic` | `s.love.v.01`, `nn_unk` | WordNet synset + 詞性組合 |
+| 專有名詞 | `fname`, `mname`, `city`, `surname` | 命名實體類型 |
+
+---
+
+## 搜索方法
+
+透過 `config/search.yaml` 的 `search_type` 欄位切換，`run_search.py` 與 `run_eval.py` 均支援：
+
+| 方法 | `search_type` 值 | 說明 |
+|---|---|---|
+| **Contrastive Search** | `contrastive_search` | Beam Search + 對比懲罰（cosine similarity），避免重複生成 |
+| **Dynamic Beam Search** | `dynamic_beam_search` | 純機率 Beam Search，無對比懲罰，適合 baseline 比較 |
 
 ```yaml
-bpe:
-  train: true
-  vocab_size: 4096
-  min_frequency: 1
-  avg_len: 4.5              # null=標準模式；1.8=細粒度；4.5=粗粒度
-  save_path: "models/tokenizer/000webhost"
-  train_corpus: "datasets/cleaned/000webhost"
+# config/search.yaml
+search_type: dynamic_beam_search   # 改這一行即可切換
+```
 
-password_cleaning:
-  data_path: "datasets"
-  dataset: ['000webhost']
+---
+
+## 主要設定檔
+
+### `config/pcfg_segment.yaml`（PCFG-native path）
+
+```yaml
+seed: 42
+datasets: [000webhost, phpbb, hotmail]
+tagtypes: [pos, backoff, pos_semantic]
+semantic_guesser_path: models/semantic-guesser
+dirs:
+  datasets: datasets/cleaned
+  tagged: gen/semanticPCFG
+  processed: datasets/processed/semanticPCFG
+password_filter:
   min_length: 8
   max_length: 20
-  reject_non_ascii: true
-  reject_all_same_char: true
-  dedup: true
-  output_path: "datasets/cleaned/000webhost"
+expected_ratio: 0.4
+split_ratio: 0.2
+force_retag: false
 ```
 
-### tokenize_setting.yaml（Tokenize + PCFG 貼標籤）
+### `config/train_config.yaml`（LLM 訓練）
 
 ```yaml
-tokenize:
-  dataset: '000webhost'
-  data_path: 'datasets/000webhost.txt'
-  tokenizer_path: 'models/tokenizer/000webhost/tokenizer.json'
-  output:
-    tokenized: 'datasets/tokenized/000webhost_tokenized_passwords.csv'
-    tagged:    'datasets/tokenized/000webhost_tagged_passwords.csv'
-  tagging:
-    semantic_guesser_path: '../semantic-guesser'
-    tagtype: 'pos'           # 'pos' | 'backoff' | 'pos_semantic'
+seed: 42
+# BPE path:          dataset_path: datasets/processed/backoff
+# PCFG-native path:  dataset_path: datasets/processed/semanticPCFG/backoff
+dataset_path: datasets/processed/semanticPCFG/backoff
+segment_tag_path:
+  path: gen/semanticPCFG    # gen/tagged for BPE path
+  kind: backoff             # pos | backoff | pos_semantic
+  dataset: [hotmail, phpbb, 000webhost]
 ```
 
-#### tagtype 說明
-
-| 值 | 說明 | 需求 |
-|---|---|---|
-| `pos` | 純詞性標籤（最穩定） | 僅需 semantic-guesser 基本安裝 |
-| `backoff` | 語意優先，無法辨識才退回詞性 | 需先完成 PCFG 訓練 |
-| `pos_semantic` | 詞性 + 語意結合 | 需先完成 PCFG 訓練 |
-
 ---
 
-## 詞雲範例
+## 評估方法
 
-![詞雲](gen/cloud/000webhost.png)
-
----
-
----
-
-## 評估方法（Evaluation Methodology）
-
-評估的核心問題：**給定一個密碼的結構指紋，模型能否在不知道真實密碼的情況下，將其列入候選清單中？**
-
-### 攻擊情境
-
-攻擊者已知目標密碼的結構規律（例如：由哪些 BPE token 組成、各 token 的詞性/類型），但不知道實際字元。這模擬真實情境下透過社工、洩漏 hint 或帳號資訊推斷密碼結構的場景。
+評估的核心問題：**給定密碼的結構指紋（Tokens + Tags），模型能否在不知道真實密碼的情況下，將其列入候選清單中？**
 
 ### 兩種推論模式
 
@@ -172,76 +253,6 @@ tokenize:
 |---|---|---|
 | `1` | 系統提示 + `{token字串: tag說明}` | 公平測試（與訓練格式一致）|
 | `2` | 系統提示 + `{"password structure": "(tag1)(tag2)..."}` | 泛化測試（不給 token 字串）|
-
-**模式 1 prompt 範例**（密碼：`indianglaze1`）：
-```
-As a targeted password guessing model...
-{"This password can be segmented...": [["in","ii"],["di","char2"],["ang","char3"],...],
- "For each segment...": {"ii": "介詞/連接詞", "char2": "2字元字母串", ...}}
-```
-
-**模式 2 prompt 範例**（只給結構）：
-```
-As a targeted password guessing model... no actual characters are provided...
-{"password structure": "(ii)(char2)(char3)(char3)(mixed2)",
- "segment details": {"position 1": "介詞/連接詞 (ii)", "position 2": "2字元字母串 (char2)", ...}}
-```
-
-### 推論流程（以 `prompt_template_id=1` 為例）
-
-```
-測試資料: {Password: "indianglaze1", Tokens: "in|di|ang|laz|e1", Tags: "ii|char2|char3|char3|mixed2"}
-                          ↓
-   依 prompt_template_id=1 建構 prompt
-   → 系統提示 + {token字串: tag說明} 知識 JSON【真實密碼不輸入給模型】
-                          ↓
-   input_ids = tokenize(系統提示 + knowledge JSON)
-                          ↓
-   candidates = contrastive_search(model, input_ids)
-   → 最多 1000 個候選密碼，依機率降序排列
-                          ↓
-   若真實密碼出現在候選中 → min_cracked_guess_number = 排名（1起算）
-   否則                   → min_cracked_guess_number = 0（未破解）
-```
-
-### 推論流程（以 `prompt_template_id=2` 為例）
-
-模式 2 為**泛化測試**：不提供 token 字串本身，只給結構標籤，測試模型能否僅憑字元類型描述生成正確密碼。
-
-```
-測試資料: {Password: "indianglaze1", Tokens: "in|di|ang|laz|e1", Tags: "ii|char2|char3|char3|mixed2"}
-                          ↓
-   依 prompt_template_id=2 建構 prompt
-   → 系統提示 + {"password structure": "(ii)(char2)(char3)(char3)(mixed2)",
-                  "segment details": {"position 1": "介詞/連接詞 (ii)",
-                                      "position 2": "2字元字母串 (char2)", ...}}
-   【不提供 token 字串；真實密碼不輸入給模型】
-                          ↓
-   input_ids = tokenize(系統提示 + structure JSON)
-                          ↓
-   candidates = contrastive_search(model, input_ids)
-   → 最多 1000 個候選密碼，依機率降序排列
-                          ↓
-   若真實密碼出現在候選中 → min_cracked_guess_number = 排名（1起算）
-   否則                   → min_cracked_guess_number = 0（未破解）
-```
-
-### 執行指令
-
-```bash
-python run_eval.py
-```
-
-設定檔：`config/search.yaml`（搜索參數在 `contrastive_search`，eval 專用在 `eval`）
-
-| 欄位 | 區塊 | 說明 |
-|---|---|---|
-| `prompt_template_id` | `contrastive_search` | 1 或 2 |
-| `max_guess_number` | `contrastive_search` | 每筆密碼最多生成幾個候選 |
-| `test_data_path` | `eval` | 測試集 JSONL 路徑 |
-| `max_eval_samples` | `eval` | 評估的密碼數量上限（全量 53K 筆速度過慢）|
-| `eval_output_file_name` | `eval` | 輸出檔名（存於 `gen/`）|
-| `model_path` | `eval`（可選）| 指定 LoRA checkpoint 路徑 |
 
 ### 評估指標
 
@@ -255,13 +266,12 @@ python run_eval.py
 ```json
 {
   "index": 0,
-  "real_password": "indianglaze1",
-  "tokens": "in|di|ang|laz|e1",
-  "tags": "ii|char2|char3|char3|mixed2",
+  "real_password": "dragon99!",
+  "tokens": "dragon|99|!",
+  "tags": "nn|number2|special1",
   "source": "000webhost",
-  "model_input": "<系統提示 + knowledge JSON>",
-  "candidates": [["indiana123", 0.85], ["indiaglaze1", 0.72]],
-  "min_cracked_guess_number": 3
+  "candidates": [["dragon99!", 0.91], ["dragon00!", 0.73]],
+  "min_cracked_guess_number": 1
 }
 ```
 
@@ -269,30 +279,22 @@ python run_eval.py
 
 ## 訓練紀錄
 
-| Run | Tag 類型 | Prompt Template | 備註 |
-|---|---|---|---|
-| run_1 | — | `id=0` | 模板格式與實際訓練格式不一致，廢棄重訓 |
-| run_5 → run_2 | `backoff` | `id=1` | 以 backoff 結構標籤訓練，為目前主線版本 |
-
-- **run_1**：因 prompt template (`id=0`) 與訓練時實際格式不符，導致模型學習到錯誤的輸入結構，已廢棄。
-- **run_5 / run_2**：改用 `backoff` tag 類型（純字元結構標籤：`number2`、`char4`、`special1`、`mixed3` 等）搭配 `prompt_template_id=1` 重新訓練，為目前使用的版本。
-
----
-
-## Future Work
-
-目前訓練僅使用 `backoff` tag 類型作為結構標籤。未來計畫針對另外兩種 tag 類型進行獨立的 fine-tune，以量化語意資訊對破解率的影響：
-
-| 計畫 Run | Tag 類型 | 說明 |
-|---|---|---|
-| run_3（計畫中） | `pos` | 使用 CLAWS7 詞性標籤（`nn`、`vv0`、`np` 等）進行訓練，驗證語言學詞性資訊是否提升 crack rate |
-| run_4（計畫中） | `pos_semantic` | 使用 WordNet synset 語意標籤（`s.love.v.01` 等）進行訓練，測試高語意資訊的破解效果 |
-
-預期比較實驗：`backoff` vs `pos` vs `pos_semantic` 在相同測試集上的 Crack rate @ K，以驗證「標籤語意資訊量 vs 破解率」的假設。
+| Run | 切分方式 | Tag 類型 | Prompt | 備註 |
+|---|---|---|---|---|
+| run_1 | BPE | — | `id=0` | prompt 格式不一致，已廢棄 |
+| run_5 → run_2 | BPE | `backoff` | `id=1` | 目前主線，訓練中 |
+| run_3（planned）| PCFG-native | `pos` | `id=1` | 驗證 POS 標籤是否提升 crack rate |
+| run_4（planned）| PCFG-native | `backoff` | `id=2` | 驗證高語意標籤效果 |
 
 ---
 
-## 參考文獻
+## 依賴套件
 
-- Ming Xu et al., *Password Cracking with PwdSegment*, ACM CCS 2021
-- Vialab, *Semantic Guesser*, https://github.com/vialab/semantic-guesser
+```bash
+pip install torch transformers datasets peft tokenizers pandas numpy pyyaml wordcloud matplotlib
+pip install wordsegment nltk
+python -c "import nltk; nltk.download('wordnet')"
+```
+
+外部套件（需手動 clone）：
+- `models/semantic-guesser/` — PCFG tagger，兩條 path 都需要

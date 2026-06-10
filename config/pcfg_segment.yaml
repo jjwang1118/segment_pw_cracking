@@ -1,0 +1,45 @@
+# ============================================================
+# pcfg_segment.yaml
+#
+# Config for PCFG-native segmentation + tagging pipeline.
+# Entry point: run_pcfg_segment.py
+#
+# Outputs:
+#   gen/semanticPCFG/{dataset}_{tagtype}_tagged.csv
+#   datasets/processed/semanticPCFG/{tagtype}/split/train_data.jsonl
+#   datasets/processed/semanticPCFG/{tagtype}/split/test_data.jsonl
+# ============================================================
+
+seed: 42
+
+datasets:
+- 000webhost
+- phpbb
+- hotmail
+
+tagtypes:
+- pos
+- backoff
+- pos_semantic
+
+semantic_guesser_path: models/semantic-guesser
+
+dirs:
+  # cleaned passwords: {datasets_dir}/{dataset}/cleaned_data.txt
+  datasets: datasets/cleaned
+  # tagged CSV output: {tagged_dir}/{dataset}_{tagtype}_tagged.csv
+  tagged: gen/semanticPCFG
+  # JSONL split output: {processed_dir}/{tagtype}/split/
+  processed: datasets/processed/semanticPCFG
+
+password_filter:
+  min_length: 8
+  max_length: 20
+
+# fraction of data to sample before splitting
+expected_ratio: 0.4
+# fraction of sampled data reserved for test set
+split_ratio: 0.2
+
+# set to true to re-run tagging even if the CSV already exists
+force_retag: false
