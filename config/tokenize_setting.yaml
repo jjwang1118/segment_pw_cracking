@@ -1,0 +1,32 @@
+# ============================================================
+# Tokenize 設定檔
+# ── 只需修改 dataset，所有路徑自動組合 ──────────────────────
+# ============================================================
+
+tokenize:
+  dataset: '000webhost'          # 切換資料集只改這裡
+
+  # ── 基底目錄 ───────────────────────────────────────────
+  dirs:
+    datasets:  'datasets'                    # {datasets}/{dataset}.txt
+    tokenizer: 'models/tokenizer'            # {tokenizer}/{dataset}/tokenizer.json
+    tokenized: 'gen/tokenized'               # {tokenized}/{dataset}_tokenized.csv
+    tagged:    'gen/tagged'             # {tagged}/{dataset}_tagged.csv
+
+  # ── PCFG 貼標籤設定 ────────────────────────────────────
+  tagging:
+    semantic_guesser_path: 'models/semantic-guesser'
+    tagtype: 'pos'  # 可選：pos / backoff / pos_semantic
+    # 可選模式：
+    #   pos         - 只用詞性標記（POS），不查 WordNet
+    #                 輕量快速；數字→numberN、純字母→charN、未知詞→unk
+    #                 例：love→vb, 123→number3, aaaa→char4
+    #
+    #   backoff     - 語意優先，退回詞性（Semantic backoff POS）
+    #                 先查 WordNet synset 及專有名詞字典（人名/城市/國家），
+    #                 找不到才退回 POS 標記
+    #                 例：loved→s.love.v.01, paris→city, jonas→mname
+    #
+    #   pos_semantic - 詞性 + 語意合併（需 synset 資料）
+    #                 標記格式為 pos_synset，最細緻但需先完成 PCFG 訓練
+    #                 例：loved→vvd_s.love.v.01, aaaaa→char5, 無synset→vb_unk

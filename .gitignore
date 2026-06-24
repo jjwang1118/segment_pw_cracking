@@ -1,0 +1,53 @@
+# Large model weights & external libs
+models/
+
+# Checkpoints
+checkpoints/
+
+# Datasets (raw & processed — large)
+datasets/cleaned/
+datasets/processed/
+datasets/*.txt
+
+# Generated outputs
+gen/tokenized/
+gen/tagged/
+gen/semanticPCFG/
+gen/cloud/
+gen/analysis/
+gen/eval_results*
+
+# Miniconda installers
+Miniconda3-*.sh
+Miniconda3-*.sh.*
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Virtual envs
+.env
+.venv
+env/
+venv/
+
+# OS
+.DS_Store
+
+# Swap / temp files
+*.swp
+*.swo
+
+# Job logs
+job-*.out
+eval-*.out
+*.log
+
+# TensorBoard
+runs/
