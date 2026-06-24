@@ -1,0 +1,23 @@
+lcd "/home/jjwang1118/projects/llm_pcfg_cracking model"
+mkdir llm_pcfg_cracking
+cd llm_pcfg_cracking
+put CLAUDE.md
+put README.md
+put pcfg_tags.py
+put processData.py
+put requirements.txt
+put run_eval.py
+put run_pcfg_segment.py
+put run_search.py
+put run_tokenize.py
+put run_train.py
+put trainBPE.py
+put colab_train.ipynb
+put -r gen
+put -r models
+put -r config
+put -r results
+put -r src
+put -r util
+put -r datasets
+put -r docs

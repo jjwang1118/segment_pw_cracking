@@ -32,6 +32,14 @@ def _get_indice(id):
             "exact character count. Generate each segment on a separate line in the given order. "
             "Do not output placeholder names. Output only the characters satisfying each slot constraint."
         )
+    # inline: password structure is a single string of <SEGi>description pairs
+    if id == 5:
+        return (
+            "As a targeted password guessing model, your task is to generate likely password candidates "
+            "that satisfy the segment constraints. The structure is represented with placeholder slots, "
+            "and each slot includes only natural-language constraints. Do not output placeholders. "
+            "Generate only plausible password characters that satisfy all slot constraints."
+        )
     raise ValueError(f"Unknown prompt id: {id}")
 
 
@@ -152,6 +160,20 @@ def prompt_convert_segment_newline(data: dict, template: str) -> str:
         }
     }, ensure_ascii=False)
 
+    return template + knowledge
+
+
+def prompt_convert_inline(data: dict, template: str) -> str:
+    """Template E (id=5): inline <tag>segment format, no explanations.
+
+    Each tag name is used directly as the placeholder, immediately followed by
+    the actual segment text. No natural-language descriptions are included.
+    Example: {"password structure": "<mname>jorge<char1>m<number5>31416"}
+    """
+    tags   = data['Tags'].split('|')   if data.get('Tags')   else []
+    tokens = data['Tokens'].split('|') if data.get('Tokens') else [''] * len(tags)
+    structure = ''.join(f"<{tag}>{seg}" for tag, seg in zip(tags, tokens))
+    knowledge = json.dumps({"password structure": structure}, ensure_ascii=False)
     return template + knowledge
 
 

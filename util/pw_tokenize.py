@@ -85,6 +85,10 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
                     for seg_key, tag in zip(seg_keys, tag_list)
                 }
             }, ensure_ascii=False)
+        elif template_id == 5:
+            # inline: <tag>segment concatenated, no descriptions
+            structure = ''.join(f"<{tag}>{seg}" for tag, seg in zip(tag_list, token_list))
+            knowledge_text = json.dumps({"password structure": structure}, ensure_ascii=False)
         else:
             knowledge_text = json.dumps({
                 "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),

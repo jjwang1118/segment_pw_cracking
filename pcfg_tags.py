@@ -220,14 +220,22 @@ def expand_tag_description(tag: str, dict_: dict = dictionary) -> str:
     return f"{tag} — {desc}"
 
 
+_STRUCTURAL_EXPAND = {
+    'number':  lambda n: f"A sequence of exactly {n} digit character{'s' if int(n) > 1 else ''} (0-9).",
+    'char':    lambda n: f"A sequence of exactly {n} pure alphabetic character{'s' if int(n) > 1 else ''}.",
+    'special': lambda n: f"Exactly {n} non-alphanumeric special character{'s' if int(n) > 1 else ''} (e.g., '!', '@', '#').",
+    'mixed':   lambda n: f"A segment of exactly {n} character{'s' if int(n) > 1 else ''} mixing letters, digits, and/or special characters.",
+}
+
+
 def get_explanation(tag: str, dict_: dict = dictionary) -> str:
     """Look up the explanation for a tag, handling pattern-based keys."""
     if tag in dict_:
         return dict_[tag]
-    # numberN / charN / specialN / mixedN
-    for prefix in ('number', 'char', 'special', 'mixed'):
-        if re.fullmatch(prefix + r'\d+', tag):
-            return dict_.get(prefix + 'N', tag)
+    # numberN / charN / specialN / mixedN — substitute actual N into description
+    m = re.fullmatch(r'(number|char|special|mixed)(\d+)', tag)
+    if m:
+        return _STRUCTURAL_EXPAND[m.group(1)](m.group(2))
     # WordNet synset: lemma.pos.id  (with or without leading 's.')
     # Covers: love.v.01 / s.love.v.01 / red.s.01 / on-line.a.01 / ph.d..n.01
     if re.fullmatch(r'(?:s\.)?[a-z][a-z0-9._-]*[a-z0-9]\.[nvarsa]\.\d+|(?:s\.)?[a-z][a-z0-9._-]*\.[nvarsa]\.\d+', tag):
