@@ -13,7 +13,7 @@
 seed: 42
 
 datasets:
-- 000webhost
+- rockyou-75
 #- phpbb
 #- hotmail
 
@@ -30,16 +30,16 @@ dirs:
   # tagged CSV output: {tagged_dir}/{dataset}_{tagtype}_tagged.csv
   tagged: gen/semanticPCFG
   # JSONL split output: {processed_dir}/{tagtype}/split/
-  processed: datasets/processed/semanticPCFG/000webhost
+  processed: datasets/processed/semanticPCFG/rockyou-75
 
 password_filter:
   min_length: 8
   max_length: 20
 
 # fraction of data to sample before splitting
-expected_ratio: 0.5
+expected_ratio: 0.42
 # fraction of sampled data reserved for test set
-split_ratio:  0.025
+split_ratio: 0.048
 
 # set to true to re-run tagging even if the CSV already exists
 force_retag: false

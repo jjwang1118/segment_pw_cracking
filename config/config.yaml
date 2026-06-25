@@ -23,7 +23,7 @@ bpe:
 password_cleaning:
   # 使用的dataset
   data_path: "datasets"                        # 原始 dataset 目錄（內含 000webhost.txt 等檔案）
-  dataset: ['000webhost']  # 可選：'000webhost', 'rockyou',, 'phpbb','hotmail', 'other'
+  dataset: ['rockyou-75']  # 可選：'000webhost', 'rockyou',, 'phpbb','hotmail', 'other'
   # 長度過濾
   min_length: 8                # 最短密碼長度
   max_length: 20               # 最長密碼長度
@@ -44,10 +44,10 @@ password_cleaning:
   dedup: true                  # 是否移除重複密碼
 
   # 輸出
-  output_path: "datasets/cleaned/hotmail"   # 清洗後資料儲存路徑
+  output_path: "datasets/cleaned/rockyou-75"   # 清洗後資料儲存路徑
 
 #　cloud text
 cloud :
-  data_path: "models/tokenizer/hotmail/vocab_with_freq.json"
+  data_path: "models/tokenizer/rockyou-75/vocab_with_freq.json"
   top_k: 3000
-  output_path: "gen/cloud/hotmail.png"
+  output_path: "gen/cloud/rockyou-75.png"
