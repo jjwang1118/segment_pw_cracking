@@ -1,6 +1,7 @@
 ## 實作constrative search
 ## 獨立kv cache
 
+import re
 import numpy as np
 import torch
 import math
@@ -618,6 +619,234 @@ def contrastive_search(
         eos_list = stripped
 
     if sorted:
+        eos_list.sort(key=lambda x: x[1], reverse=True)
+
+    return eos_list
+
+
+# ── Constrained Decoding ──────────────────────────────────────────────────────
+
+def build_step_constraints(tags_str: str, vocab_dict: dict, eos_id: int):
+    """
+    Parse a pipe-separated Tags string into per-step allowed char token ID lists.
+
+    Supports only backoff structural tags: numberN, charN, specialN, mixedN.
+    Each tag is expanded into N identical steps (one per character position).
+
+    Returns:
+        (step_char_ids, total_length)
+            step_char_ids: List[List[int]] — allowed token IDs at each step (no EOS)
+            total_length:  int             — total password character count
+
+        (None, None) if any tag is not a backoff structural tag (pos/semantic tag
+        has no encoded length → constrained decoding cannot be applied).
+
+    Args:
+        tags_str:   pipe-separated tag string, e.g. "char5|number3|special1"
+        vocab_dict: char → tokenizer_id mapping from get_alpa()
+        eos_id:     EOS token ID from tokenizer
+    """
+    digit_ids   = [tid for c, tid in vocab_dict.items() if c.isdigit()]
+    alpha_ids   = [tid for c, tid in vocab_dict.items() if c.isalpha()]
+    special_ids = [tid for c, tid in vocab_dict.items() if not c.isalnum()]
+    any_ids     = list(vocab_dict.values())
+
+    _class_map = {
+        'number':  digit_ids,
+        'char':    alpha_ids,
+        'special': special_ids,
+        'mixed':   any_ids,
+    }
+
+    step_char_ids = []
+    for tag in tags_str.split("|"):
+        m = re.fullmatch(r'(number|char|special|mixed)(\d+)', tag)
+        if not m:
+            return None, None
+        kind, n = m.group(1), int(m.group(2))
+        step_char_ids.extend([_class_map[kind]] * n)
+
+    return step_char_ids, len(step_char_ids)
+
+
+@torch.no_grad()
+def dynamic_beam_search_Constrained_Decoding(
+    model: AutoModelForCausalLM,
+    input_ids: torch.Tensor,
+    tags_str: str,
+    vocab_dict: dict,
+    eos_id: int,
+    batch_size: int = 1000,
+    beam_width: int = 1000,
+    search_width: int = None,
+    sorted_results: bool = True,
+):
+    """
+    Constrained beam search that hard-enforces character class and exact length.
+
+    At each generation step l, only tokens whose character belongs to the current
+    segment's class are admitted into the beam (digit / alpha / special / any).
+    EOS is never allowed mid-sequence; at the final step all surviving beams are
+    forced to emit EOS, guaranteeing every candidate has exactly the correct length.
+
+    Only works when every tag in tags_str is a backoff structural tag
+    (numberN / charN / specialN / mixedN).  Raises ValueError otherwise — the
+    caller should fall back to the unconstrained search in that case.
+
+    Args:
+        model:          loaded AutoModelForCausalLM
+        input_ids:      tokenised prompt  [1, prompt_len]
+        tags_str:       pipe-separated Tags field, e.g. "char5|number3|special1"
+        vocab_dict:     char → tokenizer_id mapping (from get_alpa())
+        eos_id:         tokenizer.eos_token_id
+        batch_size:     max beams per forward pass
+        beam_width:     target beam width (capped per step by char-class size)
+        search_width:   search beam width; defaults to beam_width
+        sorted_results: sort output by log-prob descending
+
+    Returns:
+        list of (seq_tensor, log_prob_scalar) tuples, sorted by prob descending.
+    """
+    step_char_ids, total_length = build_step_constraints(tags_str, vocab_dict, eos_id)
+    if step_char_ids is None:
+        raise ValueError(
+            f"Constrained decoding requires all-backoff tags "
+            f"(numberN / charN / specialN / mixedN).  Got: {tags_str!r}"
+        )
+
+    if search_width is None:
+        search_width = beam_width
+
+    device = model.device
+    input_ids = input_ids.reshape(1, -1).to(device=device)
+    reorder_info_cache_index = torch.zeros(batch_size, device=device, dtype=torch.int)
+
+    # KV-cache slice indices for the password portion (positions after the prompt)
+    pw_slice_index = torch.arange(
+        input_ids.shape[1], input_ids.shape[1] + total_length,
+        device=device, dtype=torch.int
+    )
+
+    # Pre-build per-step vocab tensors: [char_ids..., eos_id]
+    # EOS lives at index -1 (consistent with unconstrained search convention)
+    step_vocab_tensors = [
+        torch.tensor(ids + [eos_id], device=device, dtype=torch.int)
+        for ids in step_char_ids
+    ]
+
+    # Beam / search widths per step, capped by the branching factor at each step.
+    # step_bws[l] <= step_bws[l-1] * len(step_char_ids[l])
+    step_bws = [min(beam_width,   len(step_char_ids[0]))]
+    step_sws = [min(search_width, len(step_char_ids[0]))]
+    for l in range(1, total_length):
+        n = len(step_char_ids[l])
+        step_bws.append(min(beam_width,   step_bws[l - 1] * n))
+        step_sws.append(min(search_width, step_bws[l - 1] * n))
+
+    # ── Initial forward pass on prompt ────────────────────────────────────────
+    # Predict the first password character using step-0 char-class vocab.
+    step0_vtensor = step_vocab_tensors[0]
+    outputs = model.forward(
+        input_ids=input_ids,
+        past_key_values=DynamicCache(),
+        use_cache=True,
+        output_attentions=False,
+    )
+    logits     = remap_logits(step0_vtensor, outputs.logits)[:, -1, :]
+    info_cache = outputs.past_key_values
+    del outputs
+
+    # Exclude EOS column (index -1); shape [1, |step0_chars|]
+    word_probs = torch.nn.functional.log_softmax(logits, dim=1)[:, :-1]
+
+    eos_list           = []
+    pw_past_key_values = None
+    beam = DBS_Beam(info_cache, step0_vtensor, device)
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    for l in range(total_length):
+        cur_vtensor  = step_vocab_tensors[l]
+        bw           = step_bws[l]
+        sw           = step_sws[l]
+        reserve_width    = max(bw, sw)
+        forward_num      = math.ceil(reserve_width / batch_size)
+        beam_forward_num = math.ceil(bw / batch_size)
+        is_last_step     = (l == total_length - 1)
+
+        # Update beam's vocab tensor so index arithmetic in update_by_prob
+        # uses the current step's char-class size (vocab_tensor.shape[0] - 1).
+        beam.vocab_tensor = cur_vtensor
+        beam.update_by_prob(bw, reserve_width, word_probs, pw_past_key_values)
+
+        print(f"[layer {l+1:>2}/{total_length}] beams={bw}, found={len(eos_list)}", flush=True)
+
+        # Prepare accumulators for next step's word_probs (not needed at last step)
+        if not is_last_step:
+            next_vtensor = step_vocab_tensors[l + 1]
+            next_n_chars = len(step_char_ids[l + 1])
+            word_probs   = torch.empty(0, next_n_chars, device=device)
+        pw_past_key_values = None
+
+        # ── Batch forward passes ──────────────────────────────────────────────
+        for i in range(forward_num):
+            if i < beam_forward_num:
+                start, end = i * batch_size, min((i + 1) * batch_size, bw)
+            else:
+                start = bw + (i - beam_forward_num) * batch_size
+                end   = min(bw + (i - beam_forward_num + 1) * batch_size, reserve_width)
+
+            input_seqs    = beam.pw_idx[start:end, :]    # [batch, l+1]
+            fwd_input_ids = beam.pw_idx[start:end, -1:]  # [batch, 1]
+
+            cache = _cache_concat(
+                _reorder_cache(beam.info_cache, reorder_info_cache_index[:end - start]),
+                _reorder_cache(beam.pw_cache,   beam.last_beam_index[start:end])
+            )
+            outputs = model.forward(
+                input_ids=fwd_input_ids,
+                past_key_values=cache,
+                use_cache=True,
+                output_attentions=False,
+            )
+            del cache
+
+            if is_last_step:
+                # All beams have generated exactly total_length chars.
+                # Force EOS for every surviving beam; use full-vocab log_softmax
+                # so P(EOS) is properly normalised for probability-based ranking.
+                eos_log_probs = torch.nn.functional.log_softmax(
+                    outputs.logits[:, -1, :], dim=-1
+                )[:, eos_id]  # [batch]
+
+                eos_seqs = torch.cat([
+                    input_seqs,
+                    torch.full((input_seqs.shape[0], 1), eos_id,
+                               device=device, dtype=torch.int)
+                ], dim=1)
+                batch_eos_probs = (
+                    beam.search_prob[start:end, 0] + eos_log_probs
+                ).unsqueeze(1)
+                eos_list.extend(zip(eos_seqs, batch_eos_probs))
+
+            else:
+                # Remap logits to NEXT step's char-class vocab for continued search.
+                # EOS is suppressed: never collected mid-sequence.
+                logits = remap_logits(next_vtensor, outputs.logits)[:, -1, :]
+                batch_word_probs = torch.nn.functional.log_softmax(logits, dim=1)
+
+                if i < beam_forward_num:
+                    batch_pw = _cache_slice(
+                        outputs.past_key_values, pw_slice_index[:l + 1]
+                    )
+                    # Exclude EOS column before accumulating
+                    word_probs = torch.cat(
+                        [word_probs, batch_word_probs[:, :-1]], dim=0
+                    )
+                    pw_past_key_values = _merge_cache(pw_past_key_values, batch_pw)
+
+            del outputs
+
+    if sorted_results:
         eos_list.sort(key=lambda x: x[1], reverse=True)
 
     return eos_list
