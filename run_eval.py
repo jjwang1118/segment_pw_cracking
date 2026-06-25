@@ -98,7 +98,8 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
 
 def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_search"):
     from util.search import contrastive_search, dynamic_beam_search, \
-        dynamic_beam_search_Constrained_Decoding, build_step_constraints
+        dynamic_beam_search_Constrained_Decoding, build_step_constraints, \
+        contrastive_search_Constrained_Decoding
     from util.pw_tokenize import get_alpa
     from src.prompt_template import _get_indice
 
@@ -148,11 +149,13 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     alpha         = search_cfg.get("contrastive_alpha", 0.6)
     use_contrast  = search_cfg.get("use_contrastive", True)
 
-    # Params for constrained beam search (single int, not list)
+    # Params for constrained beam search / constrained contrastive search (single int, not list)
     c_beam_width   = search_cfg.get("beam_width", 1000) if not isinstance(search_cfg.get("beam_width"), list) \
                      else search_cfg["beam_width"][1]
     c_search_width = search_cfg.get("search_width", c_beam_width)
     c_fallback     = search_cfg.get("fallback_to_dynamic", True)
+    c_alpha        = search_cfg.get("contrastive_alpha", 0.6)
+    c_use_contrast = search_cfg.get("use_contrastive", True)
 
     # ── Eval params ───────────────────────────────────────────────────────────
     test_data_path   = PROJECT_ROOT / eval_cfg["test_data_path"]
@@ -184,7 +187,40 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
 
             t0 = time.time()
             try:
-                if search_type == "constrained_beam_search":
+                if search_type == "constrained_contrastive_search":
+                    tags_str = entry.get("Tags", "")
+                    step_ids, _ = build_step_constraints(tags_str, constrained_vocab_dict, eos_id)
+                    if step_ids is not None:
+                        raw_results = contrastive_search_Constrained_Decoding(
+                            model=model,
+                            input_ids=input_ids,
+                            tags_str=tags_str,
+                            vocab_dict=constrained_vocab_dict,
+                            eos_id=eos_id,
+                            batch_size=batch_size,
+                            beam_width=c_beam_width,
+                            search_width=c_search_width,
+                            use_contrastive=c_use_contrast,
+                            contrastive_alpha=c_alpha,
+                        )
+                    elif c_fallback:
+                        print(f"  [fallback→contrastive] tags='{tags_str}' 含 pos/semantic tag", flush=True)
+                        raw_results = contrastive_search(
+                            model=model,
+                            input_ids=input_ids,
+                            batch_size=batch_size,
+                            beam_width_list=list(beam_width_list),
+                            vocab=vocab_list,
+                            eos_threshold=eos_threshold,
+                            search_width_list=list(search_width),
+                            use_contrastive=use_contrast,
+                            contrastive_alpha=alpha,
+                            min_len=min_len,
+                            seg_separator_id=newline_id,
+                        )
+                    else:
+                        raw_results = []
+                elif search_type == "constrained_beam_search":
                     tags_str = entry.get("Tags", "")
                     step_ids, _ = build_step_constraints(tags_str, constrained_vocab_dict, eos_id)
                     if step_ids is not None:
@@ -311,10 +347,11 @@ if __name__ == "__main__":
     config      = _load_yaml(cli_args.config)
     search_type = config.get("search_type", "contrastive_search")
     _CANONICAL = {
-        "constrative_search":      "contrastive_search",
-        "contrastive_search":      "contrastive_search",
-        "dynamic_beam_search":     "dynamic_beam_search",
-        "constrained_beam_search": "constrained_beam_search",
+        "constrative_search":               "contrastive_search",
+        "contrastive_search":               "contrastive_search",
+        "dynamic_beam_search":              "dynamic_beam_search",
+        "constrained_beam_search":          "constrained_beam_search",
+        "constrained_contrastive_search":   "constrained_contrastive_search",
     }
     canonical   = _CANONICAL.get(search_type, "contrastive_search")
     search_cfg  = config.get(search_type) or config.get(canonical) or {}

@@ -99,7 +99,6 @@ step_bws[l] = min(beam_width, step_bws[l-1] * len(step_char_ids[l]))
 
 #### 2. Vocab Tensor 逐 step 更換
 
-`DBS_Beam.update_by_prob` 內部以 `self.vocab_tensor.shape[0] - 1` 做 beam 索引解碼。在每個 step 前更新：
 
 ```python
 beam.vocab_tensor = step_vocab_tensors[l]
