@@ -213,19 +213,97 @@ def run_dynamic_beam_search(cfg):
     print(f"[*] 結果已儲存至 {output_file}")
 
 
+def run_constrained_beam_search(cfg):
+    from util.search import dynamic_beam_search_Constrained_Decoding, build_step_constraints
+    from util.pw_tokenize import get_alpa
+    from src.prompt_template import _get_indice
+
+    tags_str = cfg.get("tags")
+    if not tags_str:
+        raise ValueError(
+            "constrained_beam_search requires a 'tags' field in the config "
+            "(e.g. tags: \"char5|number3|special1\")."
+        )
+
+    model_path = _resolve_model_path(cfg)
+    precision  = cfg.get("precistion", "full")
+    model, tokenizer, _ = _load_model(model_path, precision)
+
+    template_id = cfg.get("prompt_template_id", 3)
+    vocab_dict  = get_alpa(tokenizer)
+    eos_id      = tokenizer.eos_token_id
+
+    # Exclude chars that can form tokenizer-special sequences (<|...|>)
+    _EXCLUDE = {"<", "|", ">", "\t", tokenizer.eos_token}
+    clean_vocab = {c: tid for c, tid in vocab_dict.items() if c not in _EXCLUDE}
+
+    system_prompt = _get_indice(template_id)
+    input_ids = tokenizer(
+        system_prompt, return_tensors="pt", add_special_tokens=True
+    )["input_ids"]
+
+    beam_width   = cfg.get("beam_width",   1000)
+    search_width = cfg.get("search_width", beam_width)
+    batch_size   = cfg.get("batch_size",   1000)
+    max_guess    = cfg.get("max_guess_number", None)
+
+    # Verify tags are all backoff before running
+    step_ids, total_len = build_step_constraints(tags_str, clean_vocab, eos_id)
+    if step_ids is None:
+        print(f"[!] tags='{tags_str}' 含 pos/semantic tag，無法使用 constrained_beam_search。")
+        print(f"    請改用 dynamic_beam_search 或修改 tags 為全 backoff 格式。")
+        return
+
+    print(
+        f"[*] Constrained beam search: tags='{tags_str}', total_length={total_len}, "
+        f"beam_width={beam_width}, batch_size={batch_size}"
+    )
+
+    start_time = time.time()
+    results = dynamic_beam_search_Constrained_Decoding(
+        model=model,
+        input_ids=input_ids,
+        tags_str=tags_str,
+        vocab_dict=clean_vocab,
+        eos_id=eos_id,
+        batch_size=batch_size,
+        beam_width=beam_width,
+        search_width=search_width,
+    )
+    elapsed = time.time() - start_time
+
+    if max_guess:
+        results = results[:max_guess]
+
+    print(f"[*] 完成：找到 {len(results)} 個候選，耗時 {elapsed:.2f}s")
+
+    output_dir  = PROJECT_ROOT / cfg.get("output_path", "gen")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_file = output_dir / cfg.get("output_file_name", "constrained_beam_search_results.jsonl")
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        for seq, prob in results:
+            decoded = tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+            f.write(json.dumps({"password": decoded, "log_prob": prob.item()}, ensure_ascii=False) + "\n")
+
+    print(f"[*] 結果已儲存至 {output_file}")
+
+
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 # Maps search_type string → handler function.
 # Duplicate keys handle common typos ("constrative" vs "contrastive").
 _DISPATCHERS = {
-    "contrastive_search": run_contrastive_search,
-    "constrative_search": run_contrastive_search,
-    "dynamic_beam_search": run_dynamic_beam_search,
+    "contrastive_search":      run_contrastive_search,
+    "constrative_search":      run_contrastive_search,
+    "dynamic_beam_search":     run_dynamic_beam_search,
+    "constrained_beam_search": run_constrained_beam_search,
 }
 
 _CANONICAL_NAMES = {
-    "contrastive_search": "contrastive_search",
-    "constrative_search": "contrastive_search",
-    "dynamic_beam_search": "dynamic_beam_search",
+    "contrastive_search":      "contrastive_search",
+    "constrative_search":      "contrastive_search",
+    "dynamic_beam_search":     "dynamic_beam_search",
+    "constrained_beam_search": "constrained_beam_search",
 }
 
 

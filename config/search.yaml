@@ -27,6 +27,18 @@ dynamic_beam_search:
   output_path: gen
   output_file_name: dynamic_beam_search_results.jsonl
 
+constrained_beam_search:
+  beam_width: 1000          # single int — per-step cap auto-computed from char-class size
+  search_width: 1000
+  batch_size: 100
+  prompt_template_id: 3
+  precistion: half
+  max_guess_number: 1000
+  fallback_to_dynamic: true # run_eval: fallback to dynamic_beam_search when pos/semantic tags present
+  output_path: gen
+  output_file_name: constrained_beam_search_results.jsonl
+  tags: "char5|number3|special1"  # run_search.py only — structure to generate
+
 eval:
   model_path: checkpoints/Qwen3-4B/run_3/lora_final
   #checkpoints/Llama-3.2-3B-Instruct/run_4/lora_final

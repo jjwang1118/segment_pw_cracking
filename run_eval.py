@@ -97,7 +97,8 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
 
 
 def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_search"):
-    from util.search import contrastive_search, dynamic_beam_search
+    from util.search import contrastive_search, dynamic_beam_search, \
+        dynamic_beam_search_Constrained_Decoding, build_step_constraints
     from util.pw_tokenize import get_alpa
     from src.prompt_template import _get_indice
 
@@ -121,13 +122,22 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
         vocab_list = char_ids + ([newline_id] if newline_id is not None else []) + [eos_id]
     else:
         vocab_list = list(range(tokenizer.vocab_size - 1)) + [eos_id]
+
+    # Constrained search uses vocab_dict directly (builds per-step masks internally).
+    # Same exclusion set as vocab_list to avoid <|...|> artifacts.
+    _EXCLUDE = {tokenizer.eos_token, "\t", "<", "|", ">"}
+    constrained_vocab_dict = {c: tid for c, tid in vocab_dict.items() if c not in _EXCLUDE}
+
     system_prompt = _get_indice(template_id)
-    beam_width   = list(search_cfg["beam_width"])
+
+    # Params shared by contrastive / dynamic beam search
+    beam_width_list  = list(search_cfg["beam_width"]) if isinstance(search_cfg.get("beam_width"), list) \
+                       else [search_cfg.get("beam_width", 95)] * 16
     search_width_cfg = search_cfg.get("search_width", None)
     if search_width_cfg is None:
-        search_width = beam_width[:]
+        search_width = beam_width_list[:]
     elif isinstance(search_width_cfg, int):
-        search_width = [search_width_cfg] * len(beam_width)
+        search_width = [search_width_cfg] * len(beam_width_list)
     else:
         search_width = list(search_width_cfg)
 
@@ -137,6 +147,12 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     min_len       = search_cfg.get("min_len", 0)
     alpha         = search_cfg.get("contrastive_alpha", 0.6)
     use_contrast  = search_cfg.get("use_contrastive", True)
+
+    # Params for constrained beam search (single int, not list)
+    c_beam_width   = search_cfg.get("beam_width", 1000) if not isinstance(search_cfg.get("beam_width"), list) \
+                     else search_cfg["beam_width"][1]
+    c_search_width = search_cfg.get("search_width", c_beam_width)
+    c_fallback     = search_cfg.get("fallback_to_dynamic", True)
 
     # ── Eval params ───────────────────────────────────────────────────────────
     test_data_path   = PROJECT_ROOT / eval_cfg["test_data_path"]
@@ -168,12 +184,41 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
 
             t0 = time.time()
             try:
-                if search_type == "dynamic_beam_search":
+                if search_type == "constrained_beam_search":
+                    tags_str = entry.get("Tags", "")
+                    step_ids, _ = build_step_constraints(tags_str, constrained_vocab_dict, eos_id)
+                    if step_ids is not None:
+                        raw_results = dynamic_beam_search_Constrained_Decoding(
+                            model=model,
+                            input_ids=input_ids,
+                            tags_str=tags_str,
+                            vocab_dict=constrained_vocab_dict,
+                            eos_id=eos_id,
+                            batch_size=batch_size,
+                            beam_width=c_beam_width,
+                            search_width=c_search_width,
+                        )
+                    elif c_fallback:
+                        print(f"  [fallback→dynamic] tags='{tags_str}' 含 pos/semantic tag", flush=True)
+                        raw_results = dynamic_beam_search(
+                            model=model,
+                            input_ids=input_ids,
+                            batch_size=batch_size,
+                            beam_width_list=list(beam_width_list),
+                            vocab=vocab_list,
+                            eos_threshold=eos_threshold,
+                            search_width_list=list(search_width),
+                            min_len=min_len,
+                            seg_separator_id=newline_id,
+                        )
+                    else:
+                        raw_results = []
+                elif search_type == "dynamic_beam_search":
                     raw_results = dynamic_beam_search(
                         model=model,
                         input_ids=input_ids,
                         batch_size=batch_size,
-                        beam_width_list=list(beam_width),
+                        beam_width_list=list(beam_width_list),
                         vocab=vocab_list,
                         eos_threshold=eos_threshold,
                         search_width_list=list(search_width),
@@ -185,7 +230,7 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
                         model=model,
                         input_ids=input_ids,
                         batch_size=batch_size,
-                        beam_width_list=list(beam_width),
+                        beam_width_list=list(beam_width_list),
                         vocab=vocab_list,
                         eos_threshold=eos_threshold,
                         search_width_list=list(search_width),
@@ -266,9 +311,10 @@ if __name__ == "__main__":
     config      = _load_yaml(cli_args.config)
     search_type = config.get("search_type", "contrastive_search")
     _CANONICAL = {
-        "constrative_search": "contrastive_search",
-        "contrastive_search": "contrastive_search",
-        "dynamic_beam_search": "dynamic_beam_search",
+        "constrative_search":      "contrastive_search",
+        "contrastive_search":      "contrastive_search",
+        "dynamic_beam_search":     "dynamic_beam_search",
+        "constrained_beam_search": "constrained_beam_search",
     }
     canonical   = _CANONICAL.get(search_type, "contrastive_search")
     search_cfg  = config.get(search_type) or config.get(canonical) or {}
