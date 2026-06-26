@@ -85,6 +85,17 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
                     for seg_key, tag in zip(seg_keys, tag_list)
                 }
             }, ensure_ascii=False)
+        elif template_id in ("3b", "4b"):
+            # 3b: same user prompt as id=3 (get_explanation, no raw tag names)
+            # 4b: same user prompt content (get_explanation, no raw tag names); different system text only
+            seg_keys = [f"<SEG{i + 1}>" for i in range(len(tag_list))]
+            knowledge_text = json.dumps({
+                "password structure": "(" + ")(".join(seg_keys) + ")" if seg_keys else "",
+                "segment details": {
+                    seg_key: get_explanation(tag)
+                    for seg_key, tag in zip(seg_keys, tag_list)
+                }
+            }, ensure_ascii=False)
         elif template_id == 5:
             # inline: <tag>segment concatenated, no descriptions
             structure = ''.join(f"<{tag}>{seg}" for tag, seg in zip(tag_list, token_list))
@@ -98,8 +109,8 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             }, ensure_ascii=False)
         knowledge_ids = tokenizer(knowledge_text, add_special_tokens=False)["input_ids"]
 
-        # id=4: encode each token segment separately with newline between segments
-        if template_id == 4 and token_list:
+        # id=4 / 3b / 4b: encode each token segment separately with newline between segments
+        if template_id in (4, "3b", "4b") and token_list:
             newline_id = vocab.get('\n', tokenizer('\n', add_special_tokens=False)['input_ids'][-1])
             password_ids = []
             for idx, token_str in enumerate(token_list):

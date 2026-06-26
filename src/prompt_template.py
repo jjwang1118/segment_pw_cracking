@@ -32,6 +32,24 @@ def _get_indice(id):
             "exact character count. Generate each segment on a separate line in the given order. "
             "Do not output placeholder names. Output only the characters satisfying each slot constraint."
         )
+    # id=3 user prompt + per-segment newline output (no raw tag names)
+    if id == "3b":
+        return (
+            "As a targeted password guessing model, your task is to generate likely password candidates "
+            "that satisfy the segment constraints. The structure is represented with placeholder slots, "
+            "and each slot includes only natural-language constraints. Do not output placeholders. "
+            "Generate each segment on a separate line in the given order. "
+            "Output only the characters satisfying each slot constraint."
+        )
+    # id=4 structure but descriptions use natural language (no raw tag names); per-segment output
+    if id == "4b":
+        return (
+            "As a targeted password guessing model, your task is to generate likely password candidates "
+            "that satisfy the segment constraints. The structure is represented with placeholder slots, "
+            "and each slot includes natural-language descriptions of the character class and constraints. "
+            "Generate each segment on a separate line in the given order. "
+            "Do not output placeholder names. Output only the characters satisfying each slot constraint."
+        )
     # inline: password structure is a single string of <SEGi>description pairs
     if id == 5:
         return (
@@ -161,6 +179,16 @@ def prompt_convert_segment_newline(data: dict, template: str) -> str:
     }, ensure_ascii=False)
 
     return template + knowledge
+
+
+def prompt_convert_structure_placeholder_newline(data: dict, template: str) -> str:
+    """id=3b: same user prompt as id=3; training target uses per-segment newlines."""
+    return prompt_convert_structure_placeholder(data, template)
+
+
+def prompt_convert_no_tag_newline(data: dict, template: str) -> str:
+    """id=4b: id=4 structure with natural-language descriptions (no raw tag names); per-segment output."""
+    return prompt_convert_structure_placeholder(data, template)
 
 
 def prompt_convert_inline(data: dict, template: str) -> str:

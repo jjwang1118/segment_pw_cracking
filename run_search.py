@@ -61,9 +61,10 @@ def run_contrastive_search(cfg):
     model, tokenizer, device = _load_model(model_path, precision)
 
     template_id = cfg.get("prompt_template_id", 0)
-    vocab_dict = get_alpa_with_newline(tokenizer) if template_id == 4 else get_alpa(tokenizer)
+    _use_newline = template_id in (4, "3b", "4b")
+    vocab_dict = get_alpa_with_newline(tokenizer) if _use_newline else get_alpa(tokenizer)
     eos_id = tokenizer.eos_token_id
-    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if template_id == 4 else None
+    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if _use_newline else None
     if cfg.get("vocab_limit", True):
         exclude = {tokenizer.eos_token, "\t", "<", "|", ">"}
         char_ids = [v for k, v in vocab_dict.items() if k not in exclude]
@@ -146,9 +147,10 @@ def run_dynamic_beam_search(cfg):
     model, tokenizer, device = _load_model(model_path, precision)
 
     template_id = cfg.get("prompt_template_id", 0)
-    vocab_dict = get_alpa_with_newline(tokenizer) if template_id == 4 else get_alpa(tokenizer)
+    _use_newline = template_id in (4, "3b", "4b")
+    vocab_dict = get_alpa_with_newline(tokenizer) if _use_newline else get_alpa(tokenizer)
     eos_id = tokenizer.eos_token_id
-    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if template_id == 4 else None
+    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if _use_newline else None
     if cfg.get("vocab_limit", True):
         exclude = {tokenizer.eos_token, "\t", "<", "|", ">"}
         char_ids = [v for k, v in vocab_dict.items() if k not in exclude]

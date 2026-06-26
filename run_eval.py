@@ -90,6 +90,9 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
     if template_id == 4:
         from src.prompt_template import prompt_convert_segment_newline
         return prompt_convert_segment_newline(entry, system_prompt)
+    if template_id in ("3b", "4b"):
+        from src.prompt_template import prompt_convert_structure_placeholder
+        return prompt_convert_structure_placeholder(entry, system_prompt)
     if template_id == 5:
         from src.prompt_template import prompt_convert_inline
         return prompt_convert_inline({"Tags": entry.get("Tags")}, system_prompt)
@@ -113,9 +116,10 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
 
     # ── Vocab ─────────────────────────────────────────────────────────────────
     from util.pw_tokenize import get_alpa_with_newline
-    vocab_dict = get_alpa_with_newline(tokenizer) if template_id == 4 else get_alpa(tokenizer)
+    _use_newline = template_id in (4, "3b", "4b")
+    vocab_dict = get_alpa_with_newline(tokenizer) if _use_newline else get_alpa(tokenizer)
     eos_id     = tokenizer.eos_token_id
-    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if template_id == 4 else None
+    newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if _use_newline else None
     if search_cfg.get("vocab_limit", True):
         exclude = {tokenizer.eos_token, "\t", "<", "|", ">"}
         char_ids = [v for k, v in vocab_dict.items() if k not in exclude]
