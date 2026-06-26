@@ -31,7 +31,7 @@ constrained_beam_search:
   beam_width: 1000          # single int — per-step cap auto-computed from char-class size
   search_width: 1000
   batch_size: 100
-  prompt_template_id: 3
+  prompt_template_id: 3 # next-->4
   precistion: half
   max_guess_number: 1000
   fallback_to_dynamic: true # run_eval: fallback to dynamic_beam_search when pos/semantic tags present
