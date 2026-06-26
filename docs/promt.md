@@ -69,29 +69,29 @@ As a targeted password guessing model, your task is to generate likely password 
 
 #### id=5 `prompt_convert_inline`
 
-將 tag 名稱直接作為佔位符，緊接著對應的 segment 文字，不加任何說明。格式為 `<tag>segment` 連續串接在單一 `password structure` 字串中。
+Tag 名稱直接作為佔位符，**不含** segment 文字、不含自然語言描述。格式為 `<tag>` 連續串接在單一 `password structure` 字串中。訓練與推論的 User prompt **完全相同**。
 
-**訓練時**（User prompt 含實際 token 字串）：
+**訓練時 = 推論時**（User prompt 只有 tag 序列）：
 
 ```
 [User]
-As a targeted password guessing model, your task is to generate likely password candidates that satisfy the segment constraints. The structure is represented with placeholder slots, and each slot includes only natural-language constraints. Do not output placeholders. Generate only plausible password characters that satisfy all slot constraints.{"password structure": "<nn>dragon<number2>99<special1>!"}
+As a targeted password guessing model, your task is to generate likely password candidates that match the given tag structure. Each <tag> placeholder names the character class for that segment. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<nn><number2><special1>"}
 
 [Assistant]
 d r a g o n 9 9 !
 ```
 
-**推論時**（User prompt 只有 tag，segment 遮住）：
+**推論時**：
 
 ```
 [User]
-As a targeted password guessing model, your task is to generate likely password candidates that satisfy the segment constraints. The structure is represented with placeholder slots, and each slot includes only natural-language constraints. Do not output placeholders. Generate only plausible password characters that satisfy all slot constraints.{"password structure": "<nn><number2><special1>"}
+...{"password structure": "<nn><number2><special1>"}
 
 [Assistant]
 ▶ model generates here
 ```
 
-> 注意：id=5 的 User prompt 訓練與推論時**不同**——訓練時 `password structure` 含實際字元，推論時只剩 tag 佔位符。
+> 注意：id=5 訓練與推論 prompt 完全一致，消除了舊版訓練時含 token 字串、推論時不含的不對稱問題。
 
 ---
 

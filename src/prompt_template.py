@@ -50,13 +50,13 @@ def _get_indice(id):
             "Generate each segment on a separate line in the given order. "
             "Do not output placeholder names. Output only the characters satisfying each slot constraint."
         )
-    # inline: password structure is a single string of <SEGi>description pairs
+    # inline: password structure is a sequence of <tag> placeholders, no descriptions
     if id == 5:
         return (
             "As a targeted password guessing model, your task is to generate likely password candidates "
-            "that satisfy the segment constraints. The structure is represented with placeholder slots, "
-            "and each slot includes only natural-language constraints. Do not output placeholders. "
-            "Generate only plausible password characters that satisfy all slot constraints."
+            "that match the given tag structure. Each <tag> placeholder names the character class for "
+            "that segment. Do not output the tag placeholders. "
+            "Generate only the password characters for each segment in order."
         )
     raise ValueError(f"Unknown prompt id: {id}")
 
@@ -192,15 +192,14 @@ def prompt_convert_no_tag_newline(data: dict, template: str) -> str:
 
 
 def prompt_convert_inline(data: dict, template: str) -> str:
-    """Template E (id=5): inline <tag>segment format, no explanations.
+    """Template E (id=5): inline <tag> placeholders only, no segment text, no descriptions.
 
-    Each tag name is used directly as the placeholder, immediately followed by
-    the actual segment text. No natural-language descriptions are included.
-    Example: {"password structure": "<mname>jorge<char1>m<number5>31416"}
+    Training and inference prompts are identical — only tag names appear in the
+    password structure. The model must infer segment content from the tag name alone.
+    Example: {"password structure": "<mname><char1><number5>"}
     """
-    tags   = data['Tags'].split('|')   if data.get('Tags')   else []
-    tokens = data['Tokens'].split('|') if data.get('Tokens') else [''] * len(tags)
-    structure = ''.join(f"<{tag}>{seg}" for tag, seg in zip(tags, tokens))
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    structure = ''.join(f"<{tag}>" for tag in tags)
     knowledge = json.dumps({"password structure": structure}, ensure_ascii=False)
     return template + knowledge
 
