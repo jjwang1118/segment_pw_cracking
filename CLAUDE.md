@@ -131,6 +131,37 @@ External: `models/semantic-guesser/` — clone manually; required for both pipel
 
 ---
 
+## Reports & Results
+
+### Raw Eval Log
+- **Location:** `results/`
+- **Naming:** `eval-{job_id}.out` (e.g. `results/eval-245621.out`) — stdout captured from HPC job
+- **Contents:** per-password search trace (layer/beam progress) + per-entry summary line + final crack rate block
+- **Note:** source of truth for crack numbers; processed results (JSONL, charts, reports) are derived from this file and stored under `gen/` and `docs/reports/`
+
+### Processed Results
+- **Location:** `gen/`
+  - `gen/eval_results_*.jsonl` — per-entry JSONL output from `run_eval.py`
+  - `gen/results/` — result charts (`.png`)
+
+### Eval Report
+- **Location:** `docs/reports/`
+- **Naming:** `{model}_{N}B_id{template_id}_{search_kind}.md`
+  - `{model}_{N}B` — model name, e.g. `Qwen3-4B`
+  - `id{template_id}` — prompt template id, e.g. `id4`
+  - `{search_kind}` — search method key from `search.yaml`, e.g. `constrained_beam_search`
+  - Example: `docs/reports/Qwen3-4B_id4_constrained_beam_search.md`
+- **Contents:** model + LoRA path, template id, eval count, max_guess, search method, crack rate @K table, tag type breakdown (backoff vs pos/pos_semantic), full cracked password list with tags
+
+### Result Charts
+- **Location:** `gen/results/`
+- **Naming:** `{model}_{N}B_id{template_id}_{search_kind}_result.png`
+  - Same tokens as report, with `_result` suffix
+  - Example: `gen/results/Qwen3-4B_id4_constrained_beam_search_result.png`
+- **Contents:** left — crack rate line chart (@1/@10/@100/@1000); right — cracked password tag type distribution pie chart
+
+---
+
 ## Development Rules
 
 **Change log:** Any modification to code or config must be recorded in `docs/logs/YYYYMMDD_modify.md`. Append to today's log if it exists; create a new file if it does not.
