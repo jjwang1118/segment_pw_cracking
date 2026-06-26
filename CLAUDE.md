@@ -146,18 +146,18 @@ External: `models/semantic-guesser/` — clone manually; required for both pipel
 
 ### Eval Report
 - **Location:** `docs/reports/`
-- **Naming:** `{model}_{N}B_id{template_id}_{search_kind}.md`
+- **Naming:** `{train_template_id}_{model}_{N}B_id{inference_template_id}_{search_kind}.md`
   - `{model}_{N}B` — model name, e.g. `Qwen3-4B`
   - `id{template_id}` — prompt template id, e.g. `id4`
   - `{search_kind}` — search method key from `search.yaml`, e.g. `constrained_beam_search`
-  - Example: `docs/reports/Qwen3-4B_id4_constrained_beam_search.md`
+  - Example: `docs/reports/id3_Qwen3-4B_id4_constrained_beam_search.md`
 - **Contents:** model + LoRA path, template id, eval count, max_guess, search method, crack rate @K table, tag type breakdown (backoff vs pos/pos_semantic), full cracked password list with tags
 
 ### Result Charts
 - **Location:** `gen/results/`
-- **Naming:** `{model}_{N}B_id{template_id}_{search_kind}_result.png`
+- **Naming:** `{train_template_id}_{model}_{N}B_id{inference_template_id}_{search_kind}_result.png`
   - Same tokens as report, with `_result` suffix
-  - Example: `gen/results/Qwen3-4B_id4_constrained_beam_search_result.png`
+  - Example: `gen/results/id3_Qwen3-4B_id4_constrained_beam_search_result.png`
 - **Contents:** left — crack rate line chart (@1/@10/@100/@1000); right — cracked password tag type distribution pie chart
 
 ---
