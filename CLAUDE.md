@@ -167,4 +167,3 @@ External: `models/semantic-guesser/` — clone manually; required for both pipel
 **Change log:** Any modification to code or config must be recorded in `docs/logs/YYYYMMDD_modify.md`. Append to today's log if it exists; create a new file if it does not.
 
 **Git:** Always ask the user to confirm the commit message and branches before pushing. Never decide the message unilaterally.
-
