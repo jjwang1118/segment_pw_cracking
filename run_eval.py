@@ -118,6 +118,11 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     from util.pw_tokenize import get_alpa_with_newline
     _use_newline = template_id in (4, "3b", "4b")
     vocab_dict = get_alpa_with_newline(tokenizer) if _use_newline else get_alpa(tokenizer)
+
+    # SentencePiece decode 殘留空白偵測：用 vocab_dict['d'] 而非重新 tokenize，
+    # 確保 get_alpa() 修正後此 flag 自動關閉（不需另改本檔）。
+    _probe_tok = vocab_dict.get('d')
+    _needs_space_strip = bool(_probe_tok is not None and tokenizer.decode([_probe_tok]) != "d")
     eos_id     = tokenizer.eos_token_id
     newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if _use_newline else None
     if search_cfg.get("vocab_limit", True):
@@ -300,6 +305,8 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
             candidates = []
             for seq, prob in raw_results:
                 decoded = tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+                if _needs_space_strip:
+                    decoded = decoded.replace(" ", "")
                 if len(decoded) >= min_len:
                     candidates.append([decoded, prob.item()])
                 if len(candidates) >= max_guess:
