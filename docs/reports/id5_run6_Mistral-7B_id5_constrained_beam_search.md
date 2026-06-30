@@ -6,6 +6,7 @@
 |---|---|
 | 模型 | Mistral-7B-v0.1 |
 | LoRA | `checkpoints/Mistral-7B-v0.1/run_6/lora_final` |
+| LoRA 種類 | `lora`（標準 bf16 LoRA，非 4-bit QLoRA） |
 | 訓練 Template ID | 5 |
 | 推論 Template ID | 5 |
 | 評估筆數 | 5,000 |

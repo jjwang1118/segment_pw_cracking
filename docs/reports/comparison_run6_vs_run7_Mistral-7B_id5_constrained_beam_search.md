@@ -9,6 +9,8 @@
 | 項目 | run_6 | run_7 |
 |---|---|---|
 | LoRA | `checkpoints/Mistral-7B-v0.1/run_6/lora_final` | `checkpoints/Mistral-7B-v0.1/run_7/lora_final` |
+| LoRA 種類 | `lora`（標準 bf16，非 4-bit QLoRA） | `lora`（標準 bf16，非 4-bit QLoRA） |
+| LoRA rank / alpha | r=32, alpha=64（**雙倍**於 `config/train_config.yaml` 預設值 r=16/alpha=32） | r=32, alpha=64（**雙倍**於 `config/train_config.yaml` 預設值 r=16/alpha=32） |
 | 訓練 Template | id=5 | id=5 |
 | 推論 Template | id=5 | id=5 |
 | 搜尋法（primary） | `constrained_beam_search` | `constrained_beam_search` |
@@ -57,8 +59,11 @@
 ### 3. Tag 類型破解率走勢一致
 無論 run_6 或 run_7，含 pos/pos_semantic tag 的破解率（約 19.8–20.0%）都遠高於純 backoff tag（約 4.1–4.6%），兩次 checkpoint 在這個結構性差異上的表現模式一致，說明差異主要來自 checkpoint 間的訓練噪音，而非搜尋策略或 prompt 設計的系統性偏移。
 
-### 4. 結論
-run_6 與 run_7 可視為同一訓練設定下的相近結果，無需特別挑選「更優」版本；若要進一步比較，建議用多個 checkpoint 的平均值或更大樣本數來降低抽樣誤差。
+### 4. 兩次訓練皆使用加大的 LoRA rank
+run_6 與 run_7 都採用 r=32/alpha=64，是 `config/train_config.yaml` 預設值（r=16/alpha=32）的雙倍。這代表此次 Mistral-7B 訓練特意加大了 LoRA 容量，[Mistral vs Qwen 比較報告](comparison_Mistral-7B_vs_Qwen3-4B_id5_constrained_beam_search.md)中 Mistral 全面領先 Qwen3-4B（後者使用預設 r=16/alpha=32）的結果，可能部分歸因於更大的 LoRA rank，而非單純模型參數量差異；若要嚴謹歸因模型大小的影響，建議另外用相同 r/alpha 設定重跑 Mistral 做對照。
+
+### 5. 結論
+run_6 與 run_7 在相同（加大的）LoRA 設定下訓練，結果非常接近，可視為同一訓練設定下的相近結果，無需特別挑選「更優」版本；若要進一步比較，建議用多個 checkpoint 的平均值或更大樣本數來降低抽樣誤差。
 
 ---
 

@@ -10,6 +10,7 @@
 |---|---|---|---|
 | 模型大小 | 7B | 7B | 4B |
 | LoRA | `checkpoints/Mistral-7B-v0.1/run_6/lora_final` | `checkpoints/Mistral-7B-v0.1/run_7/lora_final` | `checkpoints/Qwen3-4B/run_8/lora_final` |
+| LoRA rank / alpha | r=32, alpha=64（雙倍於 `config/train_config.yaml` 預設值） | r=32, alpha=64（雙倍於 `config/train_config.yaml` 預設值） | 未記錄（`id5_run8` 報告未保存此欄位，無法確認是否為預設 r=16/alpha=32） |
 | Tokenizer | SentencePiece (SPM) | SentencePiece (SPM) | tiktoken (BPE) |
 | 訓練 Template | id=5 | id=5 | id=5 |
 | 推論 Template | id=5 | id=5 | id=5 |
@@ -61,8 +62,11 @@
 ### 3. Mistral 兩次 checkpoint（run_6/run_7）的一致性
 run_6 與 run_7 彼此的差距（@1000 相差 0.28pp，見 [run_6 vs run_7 比較報告](comparison_run6_vs_run7_Mistral-7B_id5_constrained_beam_search.md)）遠小於 Mistral 與 Qwen 之間的差距（2.58–2.86pp），代表 Mistral vs Qwen 的差異是穩定的模型/架構效應，而非單次訓練的隨機波動。
 
-### 4. 結論
-在 id=5 prompt 設計、相同搜尋法與測試集條件下，Mistral-7B-v0.1 的目標式猜測能力顯著優於 Qwen3-4B，推測與模型參數量（7B vs 4B）及 tokenizer 差異（SPM vs BPE）有關；後續若要進一步歸因，建議在相同參數量級下比較，或針對 tokenizer 差異做消融實驗。
+### 4. LoRA rank 是潛在混淆因子
+Mistral run_6/run_7 使用的 LoRA rank/alpha（r=32/alpha=64）是 `config/train_config.yaml` 預設值（r=16/alpha=32）的雙倍，但 Qwen run_8 實際使用的 r/alpha 未記錄在對應報告中。若 Qwen run_8 使用的是較小的預設 rank，則 Mistral 的領先可能部分來自更大的 LoRA 容量，而非單純模型大小或 tokenizer 差異；這個變因目前無法排除。
+
+### 5. 結論
+在 id=5 prompt 設計、相同搜尋法與測試集條件下，Mistral-7B-v0.1 的目標式猜測能力顯著優於 Qwen3-4B，推測與模型參數量（7B vs 4B）、tokenizer 差異（SPM vs BPE）及可能的 LoRA rank 差異有關；後續若要進一步歸因，建議在相同參數量級、相同 LoRA rank 下比較，或針對 tokenizer 差異做消融實驗。
 
 ---
 
