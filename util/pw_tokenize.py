@@ -6,13 +6,43 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from pcfg_tags import get_explanation, expand_tag_description
 
 def get_alpa(tokenizer):
-    """提取 95 個可打印字符的 token 映射"""
+    """Build 95-char → token-ID mapping for search and training.
+
+    Model-aware strategy (two tokenizer families):
+
+    tiktoken (Qwen / GPT):
+        Each printable char has a dedicated single-char token that decodes cleanly.
+        tokenizer(w, add_special_tokens=False)['input_ids'][-1] returns the right ID.
+        Combined decode is space-free: decode([ID_d, ID_r]) == "dr". No post-processing.
+
+    SentencePiece (Mistral / LLaMA):
+        Chars encode as word-initial ▁X tokens (space-prefixed).
+        tokenizer(w, add_special_tokens=False)['input_ids'][-1] returns ID(▁w).
+        Combined decode inserts spaces: decode([▁d, ▁r]) == "d r" != "dr".
+        These ▁X token IDs MUST be used because encode_limit() uses the same mapping
+        to build training targets — the model only generates ▁X tokens as output.
+        Space stripping is handled by the caller; detect the need with:
+            tokenizer.decode([vocab['d'], vocab['r']]) != "dr"
+    """
     PW_WORD = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&\'()*+,-./;<=>?@[\\]^_`{|}~ "
     vocab = {}
+
+    # Detect tokenizer family via two-char combined decode.
+    _p1 = tokenizer("d", add_special_tokens=False)["input_ids"][-1]
+    _p2 = tokenizer("r", add_special_tokens=False)["input_ids"][-1]
+    _is_spm = tokenizer.decode([_p1, _p2]) != "dr"
+
     for w in PW_WORD:
-        vocab[w] = tokenizer(w)["input_ids"][-1]
+        if _is_spm:
+            # SentencePiece: use ▁X token (what the model was trained to generate).
+            # Combined decode will insert spaces; caller must strip them.
+            vocab[w] = tokenizer(w, add_special_tokens=False)["input_ids"][-1]
+        else:
+            # tiktoken: direct char token, no post-processing needed.
+            vocab[w] = tokenizer(w, add_special_tokens=False)["input_ids"][-1]
+
     vocab[tokenizer.eos_token] = tokenizer.eos_token_id
-    vocab["\t"] = tokenizer.eos_token_id  # \t 作為 EOS marker
+    vocab["\t"] = tokenizer.eos_token_id  # \t as EOS marker
     return vocab
 
 
@@ -85,9 +115,20 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
                     for seg_key, tag in zip(seg_keys, tag_list)
                 }
             }, ensure_ascii=False)
+        elif template_id in ("3b", "4b"):
+            # 3b: same user prompt as id=3 (get_explanation, no raw tag names)
+            # 4b: same user prompt content (get_explanation, no raw tag names); different system text only
+            seg_keys = [f"<SEG{i + 1}>" for i in range(len(tag_list))]
+            knowledge_text = json.dumps({
+                "password structure": "(" + ")(".join(seg_keys) + ")" if seg_keys else "",
+                "segment details": {
+                    seg_key: get_explanation(tag)
+                    for seg_key, tag in zip(seg_keys, tag_list)
+                }
+            }, ensure_ascii=False)
         elif template_id == 5:
-            # inline: <tag>segment concatenated, no descriptions
-            structure = ''.join(f"<{tag}>{seg}" for tag, seg in zip(tag_list, token_list))
+            # inline: <tag> placeholders only — training prompt matches inference prompt
+            structure = ''.join(f"<{tag}>" for tag in tag_list)
             knowledge_text = json.dumps({"password structure": structure}, ensure_ascii=False)
         else:
             knowledge_text = json.dumps({
@@ -98,8 +139,8 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             }, ensure_ascii=False)
         knowledge_ids = tokenizer(knowledge_text, add_special_tokens=False)["input_ids"]
 
-        # id=4: encode each token segment separately with newline between segments
-        if template_id == 4 and token_list:
+        # id=4 / 3b / 4b: encode each token segment separately with newline between segments
+        if template_id in (4, "3b", "4b") and token_list:
             newline_id = vocab.get('\n', tokenizer('\n', add_special_tokens=False)['input_ids'][-1])
             password_ids = []
             for idx, token_str in enumerate(token_list):

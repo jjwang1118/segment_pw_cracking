@@ -1,6 +1,7 @@
 ## 實作constrative search
 ## 獨立kv cache
 
+import re
 import numpy as np
 import torch
 import math
@@ -28,6 +29,18 @@ def _reorder_cache(cache: DynamicCache, beam_idx: torch.Tensor) -> DynamicCache:
     for i, layer in enumerate(cache.layers):
         k = layer.keys.index_select(0, idx.to(layer.keys.device))
         v = layer.values.index_select(0, idx.to(layer.values.device))
+        new.update(k, v, layer_idx=i)
+    return new
+
+
+def _expand_cache(cache: DynamicCache, batch_size: int) -> DynamicCache:
+    """Broadcast a batch-size-1 KV cache to batch_size using expand (zero-copy view).
+    Use instead of _reorder_cache(cache, zeros_tensor) to avoid copying the prompt KV cache
+    batch_size times on every forward pass."""
+    new = DynamicCache()
+    for i, layer in enumerate(cache.layers):
+        k = layer.keys.expand(batch_size, -1, -1, -1)
+        v = layer.values.expand(batch_size, -1, -1, -1)
         new.update(k, v, layer_idx=i)
     return new
 
@@ -208,7 +221,7 @@ def dynamic_beam_search(
             input_ids = beam.pw_idx[start:end, -1:]
 
             cache = _cache_concat(
-                _reorder_cache(beam.info_cache, reorder_info_cache_index[:end - start]),
+                _expand_cache(beam.info_cache, end - start),
                 _reorder_cache(beam.pw_cache, beam.last_beam_index[start:end])
             )
 
@@ -526,18 +539,15 @@ def contrastive_search(
 
             input_seqs = beam.pw_idx[start:end, :]
             input_ids = beam.pw_idx[start:end, -1:]
-            
-            # 取得當前 batch 對應的父 beam 索引（用於 cache 重排）
+
             cache_beam_indices = beam.last_beam_index[start:end]
-            
-            # 計算對比懲罰
-            if i < beam_forward_num:
+            need_hidden = use_contrastive and i < beam_forward_num
 
-                current_beam_indices = torch.arange(start, end, device=device)
-
-            #Concatenate info_cache and pw_cache before feeding them into the model.
+            # Use expand (zero-copy view) for info_cache broadcast instead of
+            # index_select with all-zero indices, which would copy the full
+            # prompt KV cache batch_size times on every forward pass.
             cache = _cache_concat(
-                _reorder_cache(beam.info_cache, reorder_info_cache_index[:end - start]),
+                _expand_cache(beam.info_cache, end - start),
                 _reorder_cache(beam.pw_cache, cache_beam_indices)
             )
 
@@ -546,37 +556,27 @@ def contrastive_search(
                 past_key_values=cache,
                 use_cache=True,
                 output_attentions=False,
-                output_hidden_states=True,
+                output_hidden_states=need_hidden,
             )
 
-
-
             del cache
-  
-            # 提取當前 batch 的 hidden states [batch_size, hidden_dim]
-            current_hidden = outputs.hidden_states[-1][:, -1, :]
-            
-            # 計算對比懲罰 [batch_size]
-            # 只有 beam_width 內的 beam 需要 penalty（search_width 中額外的部分不需要）
-            if use_contrastive and i < beam_forward_num:
+
+            if need_hidden:
+                current_hidden = outputs.hidden_states[-1][:, -1, :]
+                current_beam_indices = torch.arange(start, end, device=device)
                 penalty = beam.compute_contrastive_penalty(current_hidden, current_beam_indices, contrastive_alpha)
+                hidden_states_batch.append(current_hidden)
             else:
-                # search_width 中額外的 beam 不需要計算 penalty（不會保存到 word_probs）
-                penalty = torch.zeros(current_hidden.shape[0], device=device)
-            
-            # 詞彙過濾與機率計算
+                penalty = torch.zeros(end - start, device=device)
+
             logits = remap_logits(vocab_tensor, outputs.logits)[:, -1, :]
             batch_word_probs = torch.nn.functional.log_softmax(logits, dim=1)
             batch_word_probs[:, :-1] = (1 - contrastive_alpha) * batch_word_probs[:, :-1] - penalty.unsqueeze(1)
 
             if i < beam_forward_num:
-                #將PROMPT 從PAST_KEY _VALUE切分
                 batch_pw_past_key_values = _cache_slice(outputs.past_key_values, pw_silce_index[:l + 1])
                 word_probs = torch.cat([word_probs, batch_word_probs[:, :-1]], dim=0)
                 pw_past_key_values = _merge_cache(pw_past_key_values, batch_pw_past_key_values)
-                # 收集 beam_width 內所有current hidden states (未篩選)
-                if use_contrastive:
-                    hidden_states_batch.append(current_hidden)
 
             del outputs
 
@@ -623,3 +623,444 @@ def contrastive_search(
     return eos_list
 
 
+# ── Constrained Decoding ──────────────────────────────────────────────────────
+
+def build_step_constraints(tags_str: str, vocab_dict: dict, eos_id: int):
+    """
+    Parse a pipe-separated Tags string into per-step allowed char token ID lists.
+
+    Supports only backoff structural tags: numberN, charN, specialN, mixedN.
+    Each tag is expanded into N identical steps (one per character position).
+
+    Returns:
+        (step_char_ids, total_length)
+            step_char_ids: List[List[int]] — allowed token IDs at each step (no EOS)
+            total_length:  int             — total password character count
+
+        (None, None) if any tag is not a backoff structural tag (pos/semantic tag
+        has no encoded length → constrained decoding cannot be applied).
+
+    Args:
+        tags_str:   pipe-separated tag string, e.g. "char5|number3|special1"
+        vocab_dict: char → tokenizer_id mapping from get_alpa()
+        eos_id:     EOS token ID from tokenizer
+    """
+    digit_ids   = [tid for c, tid in vocab_dict.items() if c.isdigit()]
+    alpha_ids   = [tid for c, tid in vocab_dict.items() if c.isalpha()]
+    special_ids = [tid for c, tid in vocab_dict.items() if not c.isalnum()]
+    any_ids     = list(vocab_dict.values())
+
+    _class_map = {
+        'number':  digit_ids,
+        'char':    alpha_ids,
+        'special': special_ids,
+        'mixed':   any_ids,
+    }
+
+    step_char_ids = []
+    for tag in tags_str.split("|"):
+        m = re.fullmatch(r'(number|char|special|mixed)(\d+)', tag)
+        if not m:
+            return None, None
+        kind, n = m.group(1), int(m.group(2))
+        step_char_ids.extend([_class_map[kind]] * n)
+
+    return step_char_ids, len(step_char_ids)
+
+
+@torch.no_grad()
+def dynamic_beam_search_Constrained_Decoding(
+    model: AutoModelForCausalLM,
+    input_ids: torch.Tensor,
+    tags_str: str,
+    vocab_dict: dict,
+    eos_id: int,
+    batch_size: int = 1000,
+    beam_width: int = 1000,
+    search_width: int = None,
+    sorted_results: bool = True,
+):
+    """
+    Constrained beam search that hard-enforces character class and exact length.
+
+    At each generation step l, only tokens whose character belongs to the current
+    segment's class are admitted into the beam (digit / alpha / special / any).
+    EOS is never allowed mid-sequence; at the final step all surviving beams are
+    forced to emit EOS, guaranteeing every candidate has exactly the correct length.
+
+    Only works when every tag in tags_str is a backoff structural tag
+    (numberN / charN / specialN / mixedN).  Raises ValueError otherwise — the
+    caller should fall back to the unconstrained search in that case.
+
+    Args:
+        model:          loaded AutoModelForCausalLM
+        input_ids:      tokenised prompt  [1, prompt_len]
+        tags_str:       pipe-separated Tags field, e.g. "char5|number3|special1"
+        vocab_dict:     char → tokenizer_id mapping (from get_alpa())
+        eos_id:         tokenizer.eos_token_id
+        batch_size:     max beams per forward pass
+        beam_width:     target beam width (capped per step by char-class size)
+        search_width:   search beam width; defaults to beam_width
+        sorted_results: sort output by log-prob descending
+
+    Returns:
+        list of (seq_tensor, log_prob_scalar) tuples, sorted by prob descending.
+    """
+    step_char_ids, total_length = build_step_constraints(tags_str, vocab_dict, eos_id)
+    if step_char_ids is None:
+        raise ValueError(
+            f"Constrained decoding requires all-backoff tags "
+            f"(numberN / charN / specialN / mixedN).  Got: {tags_str!r}"
+        )
+
+    if search_width is None:
+        search_width = beam_width
+
+    device = model.device
+    input_ids = input_ids.reshape(1, -1).to(device=device)
+    reorder_info_cache_index = torch.zeros(batch_size, device=device, dtype=torch.int)
+
+    # KV-cache slice indices for the password portion (positions after the prompt)
+    pw_slice_index = torch.arange(
+        input_ids.shape[1], input_ids.shape[1] + total_length,
+        device=device, dtype=torch.int
+    )
+
+    # Pre-build per-step vocab tensors: [char_ids..., eos_id]
+    # EOS lives at index -1 (consistent with unconstrained search convention)
+    step_vocab_tensors = [
+        torch.tensor(ids + [eos_id], device=device, dtype=torch.int)
+        for ids in step_char_ids
+    ]
+
+    # Beam / search widths per step, capped by the branching factor at each step.
+    # step_bws[l] <= step_bws[l-1] * len(step_char_ids[l])
+    step_bws = [min(beam_width,   len(step_char_ids[0]))]
+    step_sws = [min(search_width, len(step_char_ids[0]))]
+    for l in range(1, total_length):
+        n = len(step_char_ids[l])
+        step_bws.append(min(beam_width,   step_bws[l - 1] * n))
+        step_sws.append(min(search_width, step_bws[l - 1] * n))
+
+    # ── Initial forward pass on prompt ────────────────────────────────────────
+    # Predict the first password character using step-0 char-class vocab.
+    step0_vtensor = step_vocab_tensors[0]
+    outputs = model.forward(
+        input_ids=input_ids,
+        past_key_values=DynamicCache(),
+        use_cache=True,
+        output_attentions=False,
+    )
+    logits     = remap_logits(step0_vtensor, outputs.logits)[:, -1, :]
+    info_cache = outputs.past_key_values
+    del outputs
+
+    # Exclude EOS column (index -1); shape [1, |step0_chars|]
+    word_probs = torch.nn.functional.log_softmax(logits, dim=1)[:, :-1]
+
+    eos_list           = []
+    pw_past_key_values = None
+    beam = DBS_Beam(info_cache, step0_vtensor, device)
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    for l in range(total_length):
+        cur_vtensor  = step_vocab_tensors[l]
+        bw           = step_bws[l]
+        sw           = step_sws[l]
+        reserve_width    = max(bw, sw)
+        forward_num      = math.ceil(reserve_width / batch_size)
+        beam_forward_num = math.ceil(bw / batch_size)
+        is_last_step     = (l == total_length - 1)
+
+        # Update beam's vocab tensor so index arithmetic in update_by_prob
+        # uses the current step's char-class size (vocab_tensor.shape[0] - 1).
+        beam.vocab_tensor = cur_vtensor
+        beam.update_by_prob(bw, reserve_width, word_probs, pw_past_key_values)
+
+        print(f"[layer {l+1:>2}/{total_length}] beams={bw}, found={len(eos_list)}", flush=True)
+
+        # Prepare accumulators for next step's word_probs (not needed at last step)
+        if not is_last_step:
+            next_vtensor = step_vocab_tensors[l + 1]
+            next_n_chars = len(step_char_ids[l + 1])
+            word_probs   = torch.empty(0, next_n_chars, device=device)
+        pw_past_key_values = None
+
+        # ── Batch forward passes ──────────────────────────────────────────────
+        for i in range(forward_num):
+            if i < beam_forward_num:
+                start, end = i * batch_size, min((i + 1) * batch_size, bw)
+            else:
+                start = bw + (i - beam_forward_num) * batch_size
+                end   = min(bw + (i - beam_forward_num + 1) * batch_size, reserve_width)
+
+            input_seqs    = beam.pw_idx[start:end, :]    # [batch, l+1]
+            fwd_input_ids = beam.pw_idx[start:end, -1:]  # [batch, 1]
+
+            cache = _cache_concat(
+                _expand_cache(beam.info_cache, end - start),
+                _reorder_cache(beam.pw_cache,  beam.last_beam_index[start:end])
+            )
+            outputs = model.forward(
+                input_ids=fwd_input_ids,
+                past_key_values=cache,
+                use_cache=True,
+                output_attentions=False,
+            )
+            del cache
+
+            if is_last_step:
+                # All beams have generated exactly total_length chars.
+                # Force EOS for every surviving beam; use full-vocab log_softmax
+                # so P(EOS) is properly normalised for probability-based ranking.
+                eos_log_probs = torch.nn.functional.log_softmax(
+                    outputs.logits[:, -1, :], dim=-1
+                )[:, eos_id]  # [batch]
+
+                eos_seqs = torch.cat([
+                    input_seqs,
+                    torch.full((input_seqs.shape[0], 1), eos_id,
+                               device=device, dtype=torch.int)
+                ], dim=1)
+                batch_eos_probs = (
+                    beam.search_prob[start:end, 0] + eos_log_probs
+                ).unsqueeze(1)
+                eos_list.extend(zip(eos_seqs, batch_eos_probs))
+
+            else:
+                # Remap logits to NEXT step's char-class vocab for continued search.
+                # EOS is suppressed: never collected mid-sequence.
+                logits = remap_logits(next_vtensor, outputs.logits)[:, -1, :]
+                batch_word_probs = torch.nn.functional.log_softmax(logits, dim=1)
+
+                if i < beam_forward_num:
+                    batch_pw = _cache_slice(
+                        outputs.past_key_values, pw_slice_index[:l + 1]
+                    )
+                    # Exclude EOS column before accumulating
+                    word_probs = torch.cat(
+                        [word_probs, batch_word_probs[:, :-1]], dim=0
+                    )
+                    pw_past_key_values = _merge_cache(pw_past_key_values, batch_pw)
+
+            del outputs
+
+    if sorted_results:
+        eos_list.sort(key=lambda x: x[1], reverse=True)
+
+    return eos_list
+
+
+@torch.no_grad()
+def contrastive_search_Constrained_Decoding(
+    model: AutoModelForCausalLM,
+    input_ids: torch.Tensor,
+    tags_str: str,
+    vocab_dict: dict,
+    eos_id: int,
+    batch_size: int = 100,
+    beam_width: int = 1000,
+    search_width: int = None,
+    sorted_results: bool = True,
+    use_contrastive: bool = True,
+    contrastive_alpha: float = 0.6,
+):
+    """
+    Constrained contrastive beam search: hard-enforces character class and exact password
+    length (like dynamic_beam_search_Constrained_Decoding) while applying a per-beam
+    hidden-state diversity penalty (like contrastive_search).
+
+    At each step l only tokens from the current segment's class (digit/alpha/special/any)
+    are admitted.  EOS is never allowed mid-sequence; at the final step all surviving beams
+    are forced to emit EOS so every candidate has exactly the correct length.
+
+    When use_contrastive=False this degrades to dynamic_beam_search_Constrained_Decoding.
+    Raises ValueError if tags_str contains any pos/semantic tag.
+
+    Args:
+        model:             loaded AutoModelForCausalLM
+        input_ids:         tokenised prompt  [1, prompt_len]
+        tags_str:          pipe-separated Tags, e.g. "char5|number3|special1"
+        vocab_dict:        char → tokenizer_id mapping (from get_alpa())
+        eos_id:            tokenizer.eos_token_id
+        batch_size:        max beams per forward pass
+        beam_width:        target beam width (capped per step by char-class size)
+        search_width:      search beam width; defaults to beam_width
+        sorted_results:    sort output by log-prob descending
+        use_contrastive:   enable hidden-state diversity penalty
+        contrastive_alpha: penalty weight α  (score = (1-α)·logP − α·max_cos_sim)
+    """
+    if not use_contrastive:
+        return dynamic_beam_search_Constrained_Decoding(
+            model=model, input_ids=input_ids, tags_str=tags_str,
+            vocab_dict=vocab_dict, eos_id=eos_id, batch_size=batch_size,
+            beam_width=beam_width, search_width=search_width,
+            sorted_results=sorted_results,
+        )
+
+    step_char_ids, total_length = build_step_constraints(tags_str, vocab_dict, eos_id)
+    if step_char_ids is None:
+        raise ValueError(
+            f"Constrained decoding requires all-backoff tags "
+            f"(numberN / charN / specialN / mixedN).  Got: {tags_str!r}"
+        )
+
+    if search_width is None:
+        search_width = beam_width
+
+    device = model.device
+    input_ids = input_ids.reshape(1, -1).to(device=device)
+
+    pw_slice_index = torch.arange(
+        input_ids.shape[1], input_ids.shape[1] + total_length,
+        device=device, dtype=torch.int
+    )
+
+    step_vocab_tensors = [
+        torch.tensor(ids + [eos_id], device=device, dtype=torch.int)
+        for ids in step_char_ids
+    ]
+
+    # Per-step beam/search widths, capped by branching factor
+    step_bws = [min(beam_width,   len(step_char_ids[0]))]
+    step_sws = [min(search_width, len(step_char_ids[0]))]
+    for l in range(1, total_length):
+        n = len(step_char_ids[l])
+        step_bws.append(min(beam_width,   step_bws[l - 1] * n))
+        step_sws.append(min(search_width, step_bws[l - 1] * n))
+
+    # ── Initial forward pass on prompt ────────────────────────────────────────
+    step0_vtensor = step_vocab_tensors[0]
+    outputs = model.forward(
+        input_ids=input_ids,
+        past_key_values=DynamicCache(),
+        use_cache=True,
+        output_attentions=False,
+        output_hidden_states=True,
+    )
+    info_cache    = outputs.past_key_values
+    logits        = remap_logits(step0_vtensor, outputs.logits)[:, -1, :]
+    initial_hidden = outputs.hidden_states[-1][:, -1, :]  # [1, hidden_dim]
+    del outputs
+
+    word_probs = torch.nn.functional.log_softmax(logits, dim=1)[:, :-1]
+
+    eos_list           = []
+    pw_past_key_values = None
+    beam = DBS_beam_contrastive_search(info_cache, step0_vtensor, device, initial_hidden)
+
+    # Initial beam expansion using step-0 word_probs (no hidden states yet)
+    bw0 = step_bws[0]
+    sw0 = step_sws[0]
+    beam.vocab_tensor = step0_vtensor
+    beam.update_by_prob(bw0, max(bw0, sw0), word_probs, None)
+
+    # ── Main loop ─────────────────────────────────────────────────────────────
+    for l in range(total_length):
+        bw           = step_bws[l]
+        sw           = step_sws[l]
+        reserve_width    = max(bw, sw)
+        forward_num      = math.ceil(reserve_width / batch_size)
+        beam_forward_num = math.ceil(bw / batch_size)
+        is_last_step     = (l == total_length - 1)
+
+        print(f"[layer {l+1:>2}/{total_length}] beams={bw}, found={len(eos_list)}", flush=True)
+
+        if not is_last_step:
+            next_vtensor = step_vocab_tensors[l + 1]
+            next_n_chars = len(step_char_ids[l + 1])
+            word_probs   = torch.empty(0, next_n_chars, device=device)
+        pw_past_key_values = None
+        hidden_states_batch = []
+
+        for i in range(forward_num):
+            if i < beam_forward_num:
+                start, end = i * batch_size, min((i + 1) * batch_size, bw)
+            else:
+                start = bw + (i - beam_forward_num) * batch_size
+                end   = min(bw + (i - beam_forward_num + 1) * batch_size, reserve_width)
+
+            input_seqs    = beam.pw_idx[start:end, :]
+            fwd_input_ids = beam.pw_idx[start:end, -1:]
+            # Only beam-width batches need hidden states; skip for last step too.
+            need_hidden = (i < beam_forward_num) and (not is_last_step)
+
+            cache = _cache_concat(
+                _expand_cache(beam.info_cache, end - start),
+                _reorder_cache(beam.pw_cache, beam.last_beam_index[start:end])
+            )
+            outputs = model.forward(
+                input_ids=fwd_input_ids,
+                past_key_values=cache,
+                use_cache=True,
+                output_attentions=False,
+                output_hidden_states=need_hidden,
+            )
+            del cache
+
+            if is_last_step:
+                # Force EOS for every surviving beam; use full-vocab log_softmax so
+                # P(EOS) is properly normalised for probability-based ranking.
+                eos_log_probs = torch.nn.functional.log_softmax(
+                    outputs.logits[:, -1, :], dim=-1
+                )[:, eos_id]
+                eos_seqs = torch.cat([
+                    input_seqs,
+                    torch.full((input_seqs.shape[0], 1), eos_id,
+                               device=device, dtype=torch.int)
+                ], dim=1)
+                batch_eos_probs = (
+                    beam.search_prob[start:end, 0] + eos_log_probs
+                ).unsqueeze(1)
+                eos_list.extend(zip(eos_seqs, batch_eos_probs))
+            else:
+                # Contrastive penalty (beam batches only)
+                if need_hidden:
+                    current_hidden = outputs.hidden_states[-1][:, -1, :]
+                    current_beam_indices = torch.arange(start, end, device=device)
+                    penalty = beam.compute_contrastive_penalty(
+                        current_hidden, current_beam_indices, contrastive_alpha
+                    )
+                    hidden_states_batch.append(current_hidden)
+                else:
+                    penalty = torch.zeros(end - start, device=device)
+
+                # Remap logits to NEXT step's char-class vocab; EOS is suppressed.
+                logits = remap_logits(next_vtensor, outputs.logits)[:, -1, :]
+                batch_word_probs = torch.nn.functional.log_softmax(logits, dim=1)
+
+                if need_hidden:
+                    batch_word_probs[:, :-1] = (
+                        (1 - contrastive_alpha) * batch_word_probs[:, :-1]
+                        - penalty.unsqueeze(1)
+                    )
+
+                if i < beam_forward_num:
+                    batch_pw = _cache_slice(
+                        outputs.past_key_values, pw_slice_index[:l + 1]
+                    )
+                    word_probs = torch.cat(
+                        [word_probs, batch_word_probs[:, :-1]], dim=0
+                    )
+                    pw_past_key_values = _merge_cache(pw_past_key_values, batch_pw)
+
+            del outputs
+
+        # Update beam for the next step
+        if not is_last_step:
+            next_bw  = step_bws[l + 1]
+            next_sw  = step_sws[l + 1]
+            next_reserve = max(next_bw, next_sw)
+            beam.vocab_tensor = step_vocab_tensors[l + 1]
+            if hidden_states_batch:
+                all_hidden = torch.cat(hidden_states_batch, dim=0)  # [bw, hidden_dim]
+                beam.update_by_prob(next_bw, next_reserve, word_probs,
+                                    pw_past_key_values, all_hidden)
+            else:
+                beam.update_by_prob(next_bw, next_reserve, word_probs,
+                                    pw_past_key_values)
+
+    if sorted_results:
+        eos_list.sort(key=lambda x: x[1], reverse=True)
+
+    return eos_list
