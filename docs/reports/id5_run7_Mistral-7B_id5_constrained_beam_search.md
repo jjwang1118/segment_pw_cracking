@@ -15,7 +15,7 @@
 | 測試集 | `datasets/processed/semanticPCFG/000webhost/backoff/split/test_data.jsonl` |
 | 輸出檔 | `results/eval/eval-249332.out` |
 
-> **注意：** 輸出 JSONL 檔名為 `gen/eval_results_id5_run_6_Mistral7B_id5.jsonl`，檔名沿用 `run_6` 但 log 開頭確認實際載入的 LoRA 為 `run_7/lora_final`（`config/search.yaml` 的 `eval_output_file_name` 欄位尚未更新，屬命名 typo，不影響本報告數據正確性）。
+> **注意：** 輸出 JSONL 原始檔名為 `gen/eval_results_id5_run_6_Mistral7B_id5.jsonl`（`config/search.yaml` 的 `eval_output_file_name` 欄位當時沿用 `run_6`，但 log 開頭確認實際載入的 LoRA 為 `run_7/lora_final`，屬命名 typo，不影響本報告數據正確性）。該 typo 已修正，檔案現已改名為 `gen/eval_results_id5_run_7_Mistral7B_id5.jsonl`，`config/search.yaml` 設定值同步更新。
 
 ## Crack Rate
 
