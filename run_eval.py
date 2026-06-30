@@ -119,10 +119,15 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     _use_newline = template_id in (4, "3b", "4b")
     vocab_dict = get_alpa_with_newline(tokenizer) if _use_newline else get_alpa(tokenizer)
 
-    # SentencePiece decode 殘留空白偵測：用 vocab_dict['d'] 而非重新 tokenize，
-    # 確保 get_alpa() 修正後此 flag 自動關閉（不需另改本檔）。
-    _probe_tok = vocab_dict.get('d')
-    _needs_space_strip = bool(_probe_tok is not None and tokenizer.decode([_probe_tok]) != "d")
+    # SentencePiece space-strip detection: use two-char combined decode.
+    # Single-char decode([▁d]) returns "d" (no space), so single-token probe
+    # gives a false negative. Two-char decode([▁d,▁r]) returns "d r" for SPM
+    # and "dr" for tiktoken — this reliably distinguishes the two families.
+    _pd, _pr = vocab_dict.get('d'), vocab_dict.get('r')
+    _needs_space_strip = bool(
+        _pd is not None and _pr is not None
+        and tokenizer.decode([_pd, _pr]) != "dr"
+    )
     eos_id     = tokenizer.eos_token_id
     newline_id = tokenizer('\n', add_special_tokens=False)['input_ids'][-1] if _use_newline else None
     if search_cfg.get("vocab_limit", True):

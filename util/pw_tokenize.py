@@ -6,40 +6,43 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from pcfg_tags import get_explanation, expand_tag_description
 
 def get_alpa(tokenizer):
-    """提取 95 個可打印字符的 token 映射。
+    """Build 95-char → token-ID mapping for search and training.
 
-    SentencePiece（Mistral/LLaMA）的 ▁X token 在組合 decode 時，第二個之後的每個
-    token 都會在前面插入空白（▁d, ▁r → "d r"），導致密碼無法比對。
-    修正策略：
-      1. 偵測 SentencePiece（pipeline 取到的 'd' 組合後 decode 帶空白）
-      2. 改用 byte-level fallback token <0xHH>，這類 token 組合 decode 不插空白
-      3. 若 byte token 不存在，退回直接 vocab 查表，再退回 pipeline
-    tiktoken（Qwen/GPT）不受影響，保持原邏輯。
+    Model-aware strategy (two tokenizer families):
+
+    tiktoken (Qwen / GPT):
+        Each printable char has a dedicated single-char token that decodes cleanly.
+        tokenizer(w, add_special_tokens=False)['input_ids'][-1] returns the right ID.
+        Combined decode is space-free: decode([ID_d, ID_r]) == "dr". No post-processing.
+
+    SentencePiece (Mistral / LLaMA):
+        Chars encode as word-initial ▁X tokens (space-prefixed).
+        tokenizer(w, add_special_tokens=False)['input_ids'][-1] returns ID(▁w).
+        Combined decode inserts spaces: decode([▁d, ▁r]) == "d r" != "dr".
+        These ▁X token IDs MUST be used because encode_limit() uses the same mapping
+        to build training targets — the model only generates ▁X tokens as output.
+        Space stripping is handled by the caller; detect the need with:
+            tokenizer.decode([vocab['d'], vocab['r']]) != "dr"
     """
     PW_WORD = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ!\"#$%&\'()*+,-./;<=>?@[\\]^_`{|}~ "
     vocab = {}
 
-    # 偵測 SentencePiece：兩個字元組合 decode 出現空白即為 SPM
+    # Detect tokenizer family via two-char combined decode.
     _p1 = tokenizer("d", add_special_tokens=False)["input_ids"][-1]
     _p2 = tokenizer("r", add_special_tokens=False)["input_ids"][-1]
     _is_spm = tokenizer.decode([_p1, _p2]) != "dr"
 
-    unk_id = tokenizer.unk_token_id
     for w in PW_WORD:
         if _is_spm:
-            # 優先使用 byte-level token（組合 decode 不帶空白）
-            byte_token = f"<0x{ord(w):02X}>"
-            tok_id = tokenizer.convert_tokens_to_ids(byte_token)
-            if tok_id is None or tok_id == unk_id:
-                tok_id = tokenizer.convert_tokens_to_ids(w)
-            if tok_id is None or tok_id == unk_id:
-                tok_id = tokenizer(w, add_special_tokens=False)["input_ids"][-1]
-            vocab[w] = tok_id
+            # SentencePiece: use ▁X token (what the model was trained to generate).
+            # Combined decode will insert spaces; caller must strip them.
+            vocab[w] = tokenizer(w, add_special_tokens=False)["input_ids"][-1]
         else:
-            vocab[w] = tokenizer(w)["input_ids"][-1]
+            # tiktoken: direct char token, no post-processing needed.
+            vocab[w] = tokenizer(w, add_special_tokens=False)["input_ids"][-1]
 
     vocab[tokenizer.eos_token] = tokenizer.eos_token_id
-    vocab["\t"] = tokenizer.eos_token_id  # \t 作為 EOS marker
+    vocab["\t"] = tokenizer.eos_token_id  # \t as EOS marker
     return vocab
 
 
