@@ -8,6 +8,7 @@ checkpoints/
 datasets/cleaned/
 datasets/processed/
 datasets/*.txt
+datasets/sister_password/*.jsonl
 
 # Generated outputs
 gen/tokenized/
@@ -51,3 +52,9 @@ eval-*.out
 
 # TensorBoard
 runs/
+
+# Windows Zone.Identifier metadata
+*:Zone.Identifier
+
+# Editor settings
+.vscode/
