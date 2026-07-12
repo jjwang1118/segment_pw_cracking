@@ -1,9 +1,9 @@
 seed: 42
-dataset_path: datasets/processed/semanticPCFG/COMB/backoff
+dataset_path: datasets/processed/semanticPCFG/000webhost/backoff
 segment_tag_path:
   path: gen/semanticPCFG
   kind: backoff # 可選：pos / backoff / pos_semantic
-  dataset: [ COMB ] # 自行調整
+  dataset: [ 000webhost ] # 自行調整
 
 expected_ratio: 0.4
 split_ratio: 0.2
@@ -17,7 +17,7 @@ qlora_train_overrides:
   optim: paged_adamw_8bit
 
 train:
-  prompt_template_id: 5
+  prompt_template_id: 6
 
   train_config:
     model_name: Mistral-7B-v0.1 #Llama-3.2-3B-Instruct
