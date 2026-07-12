@@ -58,6 +58,12 @@ def _get_indice(id):
             "that segment. Do not output the tag placeholders. "
             "Generate only the password characters for each segment in order."
         )
+    # same tag structure as id=5, but plain text after a literal newline (no JSON wrapper)
+    if id == 6:
+        return (
+            "As a targeted password guessing model, your task is to utilize the provided "
+            "structure information to guess the corresponding password."
+        )
     raise ValueError(f"Unknown prompt id: {id}")
 
 
@@ -202,6 +208,18 @@ def prompt_convert_inline(data: dict, template: str) -> str:
     structure = ''.join(f"<{tag}>" for tag in tags)
     knowledge = json.dumps({"password structure": structure}, ensure_ascii=False)
     return template + knowledge
+
+
+def prompt_convert_inline_plain(data: dict, template: str) -> str:
+    """Template F (id=6): plain-text inline <tag> placeholders, no JSON wrapper.
+
+    Same tag structure as id=5 (`<tag1><tag2>...`), but appended after a literal
+    newline instead of being wrapped in a JSON "password structure" object.
+    Example: "...guess the corresponding password.\n<mname><char1><number5>"
+    """
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    structure = ''.join(f"<{tag}>" for tag in tags)
+    return template + "\n" + structure
 
 
 def get_prompt_template(id: int) -> str:

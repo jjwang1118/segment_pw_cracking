@@ -96,6 +96,9 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
     if template_id == 5:
         from src.prompt_template import prompt_convert_inline
         return prompt_convert_inline({"Tags": entry.get("Tags")}, system_prompt)
+    if template_id == 6:
+        from src.prompt_template import prompt_convert_inline_plain
+        return prompt_convert_inline_plain({"Tags": entry.get("Tags")}, system_prompt)
     raise ValueError(f"Unknown template_id: {template_id}")
 
 

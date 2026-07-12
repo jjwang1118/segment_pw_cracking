@@ -130,6 +130,10 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             # inline: <tag> placeholders only — training prompt matches inference prompt
             structure = ''.join(f"<{tag}>" for tag in tag_list)
             knowledge_text = json.dumps({"password structure": structure}, ensure_ascii=False)
+        elif template_id == 6:
+            # plain inline: same <tag> structure as id=5, but after a literal newline, no JSON wrapper
+            structure = ''.join(f"<{tag}>" for tag in tag_list)
+            knowledge_text = "\n" + structure
         else:
             knowledge_text = json.dumps({
                 "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),

@@ -95,6 +95,36 @@ d r a g o n 9 9 !
 
 ---
 
+#### id=6 `prompt_convert_inline_plain`
+
+與 id=5 使用**完全相同**的 tag 結構表示法（`<tag1><tag2>...` 直接串接），但拿掉 JSON 包裝 —— system prompt 後接一個字面換行 `\n`，再直接接 inline tag 字串。訓練與推論的 User prompt **完全相同**。
+
+**訓練時 = 推論時**（User prompt 只有 tag 序列，無 JSON）：
+
+```
+[User]
+As a targeted password guessing model, your task is to utilize the provided structure information to guess the corresponding password.
+<nn><number2><special1>
+
+[Assistant]
+d r a g o n 9 9 !
+```
+
+**推論時**：
+
+```
+[User]
+As a targeted password guessing model, your task is to utilize the provided structure information to guess the corresponding password.
+<nn><number2><special1>
+
+[Assistant]
+▶ model generates here
+```
+
+> 注意：id=6 與 id=5 的 tag 結構完全相同，差異只在有沒有 JSON 包裝（`{"password structure": "..."}`）—— id=6 是更精簡的純文字版本，prompt token 數更少。
+
+---
+
 ---
 
 #### id=3b `prompt_convert_structure_placeholder_newline`
@@ -139,15 +169,16 @@ dragon
 
 ---
 
-#### id=3 / id=4 / id=5 差異
+#### id=3 / id=4 / id=5 / id=6 差異
 
-| | id=3 | id=4 | id=5 |
-|---|---|---|---|
-| 描述函數 | `get_explanation()`（N 已展開） | `expand_tag_description()` | 無描述 |
-| Tag 呈現 | `<SEG1>` + 自然語言說明 | `<SEG1>` + `tag — short` | `<tag>` 直接作佔位符 |
-| Segment 內容 | 不包含（訓練推論 prompt 相同） | 不包含（訓練推論 prompt 相同） | 訓練含、推論遮 |
-| Assistant 輸出 | 空格分隔字元序列 | 每 segment 獨立一行 | 空格分隔字元序列 |
-| Post-processing | 無 | 剝離 `\n` token 後拼接 | 無 |
+| | id=3 | id=4 | id=5 | id=6 |
+|---|---|---|---|---|
+| 描述函數 | `get_explanation()`（N 已展開） | `expand_tag_description()` | 無描述 | 無描述 |
+| Tag 呈現 | `<SEG1>` + 自然語言說明 | `<SEG1>` + `tag — short` | `<tag>` 直接作佔位符 | `<tag>` 直接作佔位符（同 id=5） |
+| 包裝格式 | JSON | JSON | JSON | 純文字（`\n` + tag 序列，無 JSON） |
+| Segment 內容 | 不包含（訓練推論 prompt 相同） | 不包含（訓練推論 prompt 相同） | 不包含（訓練推論 prompt 相同） | 不包含（訓練推論 prompt 相同） |
+| Assistant 輸出 | 空格分隔字元序列 | 每 segment 獨立一行 | 空格分隔字元序列 | 空格分隔字元序列 |
+| Post-processing | 無 | 剝離 `\n` token 後拼接 | 無 | 無 |
 
 #### id=3b / id=4b 與其他模板的差異
 
