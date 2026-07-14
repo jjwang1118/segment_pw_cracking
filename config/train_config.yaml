@@ -1,9 +1,9 @@
 seed: 42
-dataset_path: datasets/processed/semanticPCFG/000webhost/backoff
+dataset_path: datasets/processed/semanticPCFG/COMB/backoff
 segment_tag_path:
   path: gen/semanticPCFG
   kind: backoff # 可選：pos / backoff / pos_semantic
-  dataset: [ 000webhost ] # 自行調整
+  dataset: [ COMB ] # 自行調整
 
 expected_ratio: 0.4
 split_ratio: 0.2
