@@ -1,4 +1,4 @@
-# 126_csdn 訓練與評估參數整理
+# COMB訓練與評估參數整理
 
 整理日期：2026-07-12
 來源：[config/training_126_csdn_config.ini](../config/training_126_csdn_config.ini)、[config/evaluation_126_csdn_config.ini](../config/evaluation_126_csdn_config.ini)
