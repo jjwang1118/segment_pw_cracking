@@ -90,7 +90,7 @@
 
 ---
 
-## 7. 三方比較：PassLLM 新／舊 Prompt vs 本研究 PCFG-LLM
+## 7. 四方比較：PassLLM 新／舊 Prompt vs 本研究 PCFG-LLM 新／舊 Prompt
 
 PassLLM 端新增 `run_02`（`gen/passllm/run_02/`），對照第 1–6 節既有的 `run_01`（下稱「舊 prompt」）。兩次評估共用**同一組** checkpoint（`checkpoints/mistral_7b_COMB/final`，2026-07-11 訓練）與**同一份**評估設定（`prompt_template_id=0`、`beam_width_list=[95,1000]×15`、`dynamic_beam_search`、`test_path=data/COMB/TEST.json`、`test_limit=5000`），差異僅在於 prompt 的實際內容格式：
 
@@ -103,19 +103,30 @@ PassLLM 端新增 `run_02`（`gen/passllm/run_02/`），對照第 1–6 節既�
 
 **⚠️ 資料檔案說明：** `gen/passllm/run_02/passllm_run2_COMB.json` 實際內容是 run_01 全部 5,054 筆 + run_02 自己的 5,000 筆**串接**而成（共 10,054 筆）。本節數字僅取檔案**末尾 5,000 筆**（真正的 run_02 資料，經比對密碼集合與 run_01/本研究測試集完全一致），並與 `gen/passllm/run_02/eval-260642_params_summary.md` 記錄的官方 crack rate 數字（650/5,000, 13.00% @1000）核對一致。
 
-### Crack Rate 三方對照
+本研究端同步新增對應的「新 prompt」結果：`run_13`（prompt_template_id=6，來源 log [eval-261839.out](../../results/eval/eval-261839.out)），對照第 4 節既有的 `run_10`（prompt_template_id=5，下稱「舊 prompt」）。與 PassLLM 的情況不同，本研究的新／舊 prompt 是**各自獨立訓練**的 LoRA（皆為 r=16/alpha=32/q,k,v_proj，僅 prompt_template_id 不同），並非同一份 checkpoint 換評估格式：
 
-| @K | 本研究 PCFG-LLM | PassLLM 舊 Prompt（run_01） | PassLLM 新 Prompt（run_02） |
-|---|---|---|---|
-| @1 | 155 / 5,000（3.10%） | 0 / 5,000（0.00%） | 0 / 5,000（0.00%） |
-| @10 | 360 / 5,000（7.20%） | 425 / 5,000（8.50%） | 110 / 5,000（2.20%） |
-| @50 | 495 / 5,000（9.90%） | 765 / 5,000（15.30%） | 296 / 5,000（5.92%） |
-| @100 | 578 / 5,000（11.56%） | 914 / 5,000（18.28%） | 414 / 5,000（8.28%） |
-| @500 | 756 / 5,000（15.12%） | 1,020 / 5,000（20.40%） | 592 / 5,000（11.84%） |
-| @1000 | 851 / 5,000（17.02%） | 1,054 / 5,000（21.08%） | 650 / 5,000（13.00%） |
+| | 舊 Prompt（id=5, run_10） | 新 Prompt（id=6, run_13） |
+|---|---|---|
+| 內容格式 | tag 結構以 `json.dumps` 包裝成 JSON 字串塞入 prompt | 移除 JSON 包裝，system prompt 後直接接 inline tag 字串 |
+| 範例 | `...{"structure": "<surname><rouge.n.01><number2>"}` | `...\n<surname><rouge.n.01><number2>` |
 
-![Three-way Comparison](../../gen/results/comparison_PassLLM_oldnew_vs_PCFG-LLM_COMB_result.png)
+### Crack Rate 四方對照
+
+| @K | 本研究舊 Prompt（id=5, run_10） | 本研究新 Prompt（id=6, run_13） | PassLLM 舊 Prompt（run_01） | PassLLM 新 Prompt（run_02） |
+|---|---|---|---|---|
+| @1 | 155 / 5,000（3.10%） | 159 / 5,000（3.18%） | 0 / 5,000（0.00%） | 0 / 5,000（0.00%） |
+| @10 | 360 / 5,000（7.20%） | 348 / 5,000（6.96%） | 425 / 5,000（8.50%） | 110 / 5,000（2.20%） |
+| @50 | 495 / 5,000（9.90%） | 496 / 5,000（9.92%） | 765 / 5,000（15.30%） | 296 / 5,000（5.92%） |
+| @100 | 578 / 5,000（11.56%） | 576 / 5,000（11.52%） | 914 / 5,000（18.28%） | 414 / 5,000（8.28%） |
+| @500 | 756 / 5,000（15.12%） | 758 / 5,000（15.16%） | 1,020 / 5,000（20.40%） | 592 / 5,000（11.84%） |
+| @1000 | 851 / 5,000（17.02%） | 835 / 5,000（16.70%） | 1,054 / 5,000（21.08%） | 650 / 5,000（13.00%） |
+
+![Four-way Comparison](../../gen/results/comparison_PassLLM_oldnew_vs_PCFG-LLM_oldnew_COMB_result.png)
 
 > 圖中「PassLLM 新 Prompt」的姊妹密碼 `</s>` 串接格式參考 PassLLM 原始設計[^passllm-format]。
 
-**觀察：** 在完全相同的 checkpoint 與搜尋設定下，PassLLM 改用「新 prompt」（移除 JSON 包裝、姊妹密碼改以 `</s>` 串接）後 crack rate 全面下滑，@1000 由 21.08% 降至 13.00%（−8.08pp），甚至低於本研究 PCFG-LLM 的 17.02%。三者排序在各 K 皆為：**PassLLM 舊 Prompt > 本研究 PCFG-LLM > PassLLM 新 Prompt**。由於模型權重未變、僅推論時輸入格式改變，這顯示 PassLLM 的 targeted 猜測效果對 prompt 的字面格式相當敏感——新格式偏離了模型訓練時實際見過的輸入分佈，導致猜測能力大幅衰退。
+**觀察：**
+
+- **PassLLM 對 prompt 格式極為敏感：** 同一 checkpoint 下，改用新 prompt（移除 JSON 包裝、姊妹密碼改以 `</s>` 串接）使 crack rate 全面下滑，@1000 由 21.08% 降至 13.00%（−8.08pp）。由於模型權重未變、僅推論時輸入格式改變，顯示新格式偏離了模型訓練時實際見過的輸入分佈，猜測能力大幅衰退。
+- **本研究 PCFG-LLM 對 prompt 格式幾乎不敏感：** 新／舊 prompt 各自獨立訓練後，@1000 僅由 17.02%（id=5）小幅變動至 16.70%（id=6，−0.32pp），其餘各 K 差距亦在 ±0.3pp 內，可視為訓練隨機性範圍內的正常波動，而非有意義的格式效應。這與 tag 結構本身語意單純、對 JSON 包裝與否不敏感有關；相較之下 PassLLM 的姊妹密碼線索格式改變後，模型難以將新格式對應回訓練時學到的「舊密碼→新密碼」關聯。
+- 四者在各 K 的排序為：**PassLLM 舊 Prompt > 本研究（新／舊 Prompt 皆約 17%） > PassLLM 新 Prompt**。
