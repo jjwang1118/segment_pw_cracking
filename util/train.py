@@ -1,5 +1,6 @@
 from functools import partial
 from pathlib import Path
+import json
 import torch
 import yaml
 from transformers import (
@@ -137,6 +138,34 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     if config is None:
         config = load_config()
 
+    # 續訓：優先讀該 run 啟動當下存的 config 快照，避免中途改動
+    # config/train_config.yaml（尤其 lora_config）導致 checkpoint 架構對不上。
+    resume_ckpt = config.get("resume_from_checkpoint", None)
+    if resume_ckpt:
+        resume_ckpt = Path(resume_ckpt)
+        if not resume_ckpt.is_absolute():
+            resume_ckpt = PROJECT_ROOT / resume_ckpt
+        if not resume_ckpt.exists():
+            raise FileNotFoundError(
+                f"[!] Checkpoint 不存在：{resume_ckpt}\n"
+                f"    請確認路徑正確，或在 Colab 先從 Drive 還原 checkpoints。"
+            )
+        run_dir = resume_ckpt.parent
+        print(f"[*] 繼續訓練，沿用目錄：{run_dir}  (from {resume_ckpt.name})")
+
+        snapshot_path = run_dir / "train_config_snapshot.json"
+        if snapshot_path.exists():
+            with open(snapshot_path, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            print(f"[*] 讀取該 run 啟動時的參數快照：{snapshot_path}")
+        else:
+            print(
+                f"[!] 找不到 {snapshot_path}（此 run 建立於快照機制之前），"
+                f"將直接使用目前 config/train_config.yaml，請自行確認 LoRA 架構與當初一致。"
+            )
+    else:
+        run_dir = None  # 新 run，等 base_dir 確定後再建立
+
     from src.prompt_template import _get_indice
     from util.pw_tokenize import process_train_targeted, get_alpa
 
@@ -180,23 +209,15 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     if lora_kind != "qlora":
         model.enable_input_require_grads()  # required for gradient_checkpointing + LoRA
     tc            = config["train"]["train_config"]
-    base_dir      = PROJECT_ROOT / tc["output_dir"] / tc["model_name"]
-    base_dir.mkdir(parents=True, exist_ok=True)
 
-    resume_ckpt = config.get("resume_from_checkpoint", None)
-    if resume_ckpt:
-        resume_ckpt = Path(resume_ckpt)
-        if not resume_ckpt.is_absolute():
-            resume_ckpt = PROJECT_ROOT / resume_ckpt
-        if not resume_ckpt.exists():
-            raise FileNotFoundError(
-                f"[!] Checkpoint 不存在：{resume_ckpt}\n"
-                f"    請確認路徑正確，或在 Colab 先從 Drive 還原 checkpoints。"
-            )
-        run_dir = resume_ckpt.parent
-        print(f"[*] 繼續訓練，沿用目錄：{run_dir}  (from {resume_ckpt.name})")
-    else:
+    if run_dir is None:
+        base_dir = PROJECT_ROOT / tc["output_dir"] / tc["model_name"]
+        base_dir.mkdir(parents=True, exist_ok=True)
         run_dir = _next_run_dir(base_dir)
+        snapshot_path = run_dir / "train_config_snapshot.json"
+        with open(snapshot_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+        print(f"[*] 已存參數快照：{snapshot_path}")
 
     training_args = build_training_args(config, run_dir, train_size=len(train_dataset))
 
