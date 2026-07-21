@@ -48,16 +48,44 @@
 | bias | none |
 | init_lora_weights | true |
 
-## 二、與 run_14 草稿／run_15／run_16 的差異對照
+## 二、訓練狀況與 lora_final 來源
 
-| 參數 | run_14 草稿（未執行） | run_15（已完成） | run_16（進行中） | run_17（本次，現行 config） |
-|---|---|---|---|---|
-| prompt_template_id | 5 | 5 | 5 | 5 |
-| per_device_train_batch_size | 4 | 64 | 4 | **4** |
-| 有效 batch size | 256 | 4096 | 256 | **256** |
-| total_steps | 10,240（估算） | 650（實際） | 10,250（實際） | **10,240（估算，未執行）** |
-| learning_rate | 5e-4 | 5e-4 | 2e-4 | **5e-4（改回 run_14／run_15 水準）** |
-| LoRA r / alpha | 32 / 64 | 32 / 64 | 32 / 64 | 32 / 64 |
-| LoRA target_modules | +o_proj, gate_proj | +o_proj, gate_proj | +o_proj, gate_proj | +o_proj, gate_proj |
+- 本次 run_17（job 268989）為 2026-07-20 刪除舊 run_17（發散於 step ~3420、crack rate 0%）後重跑的第二次訓練，沿用 `learning_rate=5e-4`
+- `trainer_state.json` 顯示 eval_loss 在 step 3620 達最低點 1.6620（優於 run_16 最佳的 1.6733），之後 step 3620→3640 由 1.6620 瞬間跳到 7.1094，自此發散，與舊 run_17 相同模式重演，只是晚了約 200 step
+- job 268989 已於 2026-07-21T12:00:41 在 step ~3966/10,250 被取消（訓練未正常結束，因此 `load_best_model_at_end` 的自動存檔邏輯未觸發）
+- `lora_final` 由 `checkpoint-3620`（發散前最佳點）手動複製產生，即為本次評估實際使用的權重
 
-> **說明：** run_17 的參數組合與 run_14 草稿完全一致（batch size=4、learning_rate=5e-4），但 run_14 草稿當初從未實際執行訓練。run_16（batch=4、learning_rate=2e-4）目前訓練進行中（截至記錄時最新進度為 step 20/10,250）；run_17 是否等待 run_16 完成或另行啟動，須由使用者決定，避免兩者同時佔用 GPU 資源。LoRA 容量設定（r/alpha/target_modules）三次規劃均相同，因此 run_17 與 run_16 之間的差異單純化為 `learning_rate` 一項（2e-4 vs 5e-4）。
+## 三、評估結果
+
+| 項目 | 值 |
+|---|---|
+| 基底模型 | `models/Mistral-7B-v0.1` |
+| LoRA adapter | `checkpoints/Mistral-7B-v0.1/run_17/lora_final`（= checkpoint-3620） |
+| 評估筆數 | 5,000 |
+| 推論 Prompt Template ID | 5 |
+| Max guess number | 1,000 |
+| 測試集 | `datasets/processed/semanticPCFG/COMB/backoff/split/test_data.jsonl` |
+| 輸出檔 | `gen/eval_results_id5_run_17_Mistral7B_id5_COMB.jsonl` |
+
+### Crack Rate
+
+| @K | Cracked | Rate |
+|---|---|---|
+| @1 | 166 / 5,000 | 3.32% |
+| @10 | 325 / 5,000 | 6.50% |
+| @100 | 570 / 5,000 | 11.40% |
+| @1000 | 854 / 5,000 | 17.08% |
+
+### 結果圖表
+
+![Crack Rate & Tag Distribution](../../gen/results/id5_run17_Mistral-7B_id5_constrained_beam_search_result.png)
+
+### Tag Type 分布（@1000）
+
+| Tag Type | Cracked | Total | Rate |
+|---|---|---|---|
+| backoff | 47 | 1,773 | 2.65% |
+| pos | 114 | 1,804 | 6.32% |
+| pos_semantic | 693 | 1,423 | 48.70% |
+
+> run_17（batch=4，最佳點 step 3620）@1000 crack rate 17.08%，優於 run_15（batch=64，同 lr=5e-4，@1000 14.80%）；三個 tag type 的破解率也全面領先（pos_semantic 48.70% vs 43.99%）。用最佳點權重取代發散後的最終權重，看起來確實比 run_15 當時直接用劣化的 `lora_final` 更能反映模型真實能力上限。

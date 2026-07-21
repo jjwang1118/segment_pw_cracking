@@ -53,11 +53,11 @@ constrained_contrastive_search:
   output_file_name: constrained_contrastive_search_results.jsonl
 
 eval:
-  model_path: checkpoints/Mistral-7B-v0.1/run_14/lora_final
+  model_path: checkpoints/Mistral-7B-v0.1/run_16/lora_final
   #checkpoints/Llama-3.2-3B-Instruct/run_4/lora_final
   # eval-only fields _contrastive.jsonl
   test_data_path: datasets/processed/semanticPCFG/COMB/backoff/split/test_data.jsonl
   max_eval_samples: 5000 # 外層迴圈：評估幾筆測試密碼（全量 53K 太慢）
-  eval_output_file_name: eval_results_id5_run_14_Mistral7B_id5_COMB.jsonl
+  eval_output_file_name: eval_results_id5_run_16_Mistral7B_id5_COMB.jsonl
 
 # 前一個是 id3--->id4b，名稱忘記改(eval_results_Qwen)，要改成 eval_results_id3_Qwen3_id4b.jsonl

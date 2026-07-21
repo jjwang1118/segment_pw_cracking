@@ -46,26 +46,9 @@
 | bias | none |
 | init_lora_weights | true |
 
-### 目前訓練進度（checkpoint-20，最新）
+## 二、訓練狀況與 lora_final 來源
 
-| 指標 | 值 |
-|---|---|
-| global_step / max_steps | 20 / 10,250 |
-| epoch | 0.0195 |
-| train loss（step 20） | 4.1603 |
-| eval_loss（step 20，首次評估） | 3.6861 |
+- `trainer_state.json` 顯示 eval_loss 在 step 2620 達最低點 1.6733,之後 step 2980→3020 由 1.7827 瞬間跳到 4.1620,自此發散、直到最後存檔的 checkpoint-3980（eval_loss ≈ 12.23）都未恢復
+- 目前無對應訓練程序在跑（非本次 job 268989）,已停在 checkpoint-3980
+- `lora_final` 由 `checkpoint-2620`（發散前最佳點）手動複製 `adapter_config.json` + `adapter_model.safetensors` + `README.md` 產生,而非訓練結尾的劣化權重
 
-## 二、與前兩次規劃／已完成訓練的差異
-
-| 參數 | run_14 草稿（未執行） | run_15（已完成） | run_16（本次，現行 config） |
-|---|---|---|---|
-| prompt_template_id | 5 | 5 | 5 |
-| per_device_train_batch_size | 4 | 64 | **4** |
-| gradient_accumulation_steps | 64 | 64 | 64 |
-| 有效 batch size | 256 | 4096 | **256（與 run_14 草稿相同）** |
-| total_steps | 10,240（估算） | 640（trainer_state 實際 650） | **10,250（trainer_state 實際）** |
-| learning_rate | 5e-4 | 5e-4 | **2e-4（改回 run_13 水準）** |
-| LoRA r / alpha | 32 / 64 | 32 / 64 | 32 / 64 |
-| LoRA target_modules | +o_proj, gate_proj | +o_proj, gate_proj | +o_proj, gate_proj |
-
-> **說明：** run_16 的 `per_device_train_batch_size` 由 run_15 的 64 改回 4（有效 batch size 隨之由 4096 降至 256，梯度更新次數增加約 16 倍，total_steps 由 650 增至 10,250），同時 `learning_rate` 由 run_15 的 5e-4 調降回 2e-4。run_15 report（[id5_run15_Mistral-7B_id5_constrained_beam_search.md](id5_run15_Mistral-7B_id5_constrained_beam_search.md)）觀察到 eval_loss 全程上升、crack rate 較 run_10 下降，推測與 learning_rate 過高有關；本次同時調整 batch size 與 learning_rate 兩項，LoRA 容量（r/alpha/target_modules）維持與 run_15 相同，若 crack rate 有變化，較難單獨歸因於 batch size 或 learning_rate 其中一項。

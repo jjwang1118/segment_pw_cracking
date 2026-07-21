@@ -119,12 +119,30 @@ Mistral-7B-v0.1 / Qwen3-4B · constrained_beam_search（5,000 筆測試）
 
 | 項目 | run_15 | run_17 |
 |---|---|---|
-| batch_size | 64 | 4 |
+| batch_size（有效） | 64（micro=64, accum=64 → 4096） | 4（micro=4, accum=64 → 256） |
 | learning_rate | 5e-4 | 5e-4 |
 | LoRA | r=32/alpha=64 | r=32/alpha=64 |
-| 訓練狀態 | 已完成（650/650 steps） | 訓練中（10,250 steps 排程） |
+| 訓練狀態 | 已完成（650/650 steps） | job 268989 於 2026-07-21 在 step ~3966/10,250 被取消 |
+| 最佳 eval_loss（step） | 1.6099（step 180，佔全程 28%，**未**用於 lora_final） | 1.6620（step 3620，佔全程 35%，即 lora_final 來源） |
+| `lora_final` 來源 | 訓練結尾最後一步（發散後，eval_loss 2.3271） | 手動截斷的最佳 checkpoint-3620 |
+| @1 | 2.74%（137/5000） | 3.32%（166/5000） |
+| @10 | 5.88%（294/5000） | 6.50%（325/5000） |
+| @100 | 10.32%（516/5000） | 11.40%（570/5000） |
+| @1000 | 14.80%（740/5000） | 17.08%（854/5000） |
 
-> 待比較：train/eval loss 曲線、crack rate @K。**正式結論需等 run_17 訓練完成並跑完評估後才能補上。**
+![Batch Size Comparison — run_15 vs run_17](../../gen/results/comparison_run15_vs_run17_Mistral-7B_batch_size_result.png)
+
+紅色虛線標出各自 checkpoint 被截斷（取作 `lora_final`）的位置：左圖 run_15 標的是真正的最佳點（step 180），但當時尚無 `load_best_model_at_end`，實際 `lora_final` 用的是發散後的最終步（step 650）；右圖 run_17 標的是手動截斷點（step 3620），即目前 `lora_final` 的實際來源。
+
+> **觀察：** 兩者都在 lr=5e-4 下發散、從未恢復，差異只在發散時間點（batch=64 在 step 180 就觸底，batch=4 撐到 step 3620）。用各自最佳 checkpoint 重新評估後，run_17（batch=4）四個 K 值全面領先 run_15（batch=64），@1000 領先 +2.28pp（17.08% vs 14.80%）。但要注意 run_15 的 crack rate 是用發散後的劣化權重跑的，run_17 是用最佳點權重跑的，這個比較同時混雜了「batch size」與「lora_final 選點方式」兩個變因，不是嚴格乾淨的 batch-size-only 對照。
+
+---
+
+## 5. LoRA 容量（Mistral-7B-v0.1）
+
+### 5.1 r=16/alpha=32/[q,k,v] vs r=32/alpha=64/[+o_proj,+gate_proj]：run_10 vs run_15
+
+
 
 ---
 
