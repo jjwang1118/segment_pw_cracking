@@ -1,4 +1,4 @@
-# 參數報告：Mistral-7B-v0.1 run_17（訓練，尚未執行）
+# 參數報告：Mistral-7B-v0.1 run_17
 
 來源：[config/train_config.yaml](../../config/train_config.yaml)（現行版本，尚未 commit）
 > 本報告於 run_17 訓練**開始前**寫入，僅含訓練參數（第一節）；`checkpoints/Mistral-7B-v0.1/run_17` 目錄已存在但尚無 checkpoint。待訓練與評估完成後再補上第二節評估參數與結果，比照 [id5_run15_Mistral-7B_id5_constrained_beam_search.md](id5_run15_Mistral-7B_id5_constrained_beam_search.md) 格式。

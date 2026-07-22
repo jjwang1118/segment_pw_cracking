@@ -96,18 +96,22 @@ Mistral-7B-v0.1 / Qwen3-4B · constrained_beam_search（5,000 筆測試）
 
 ## 3. Learning Rate（Mistral-7B-v0.1）
 
-### 3.1 lr=2e-4 vs lr=5e-4：run_16 vs run_17
+### 3.1 lr=2e-4 vs lr=5e-4：run_18 vs run_17
 
-固定：batch_size=4、LoRA r=32/alpha=64（biglora）、COMB dataset、template id=5。唯一差異：learning_rate（run_16=2e-4／run_17=5e-4）。是目前唯一乾淨的 learning_rate-only 對照組。
+固定：batch_size=4（有效 256）、LoRA r=32/alpha=64（biglora，+o_proj+gate_proj）、COMB dataset、template id=5。唯一差異：learning_rate（run_18=2e-4／run_17=5e-4）。run_16 為 run_18 同配置的前一次嘗試，於 step ~2980 發散未產出可用結果，故以重跑的 run_18 取代作為對照組。
 
-| 項目 | run_16 | run_17 |
+| 項目 | run_18（2e-4） | run_17（5e-4） |
 |---|---|---|
-| learning_rate | 2e-4 | 5e-4 |
-| batch_size | 4 | 4 |
-| LoRA | r=32/alpha=64 | r=32/alpha=64 |
-| 訓練狀態 | 訓練中 | 訓練中 |
+| 訓練狀態 | 訓練中（~43%，step ~4385/10,250），用目前最佳 checkpoint-2900 評估 | 已於 step ~3966 被取消，用發散前最佳 checkpoint-3620 評估 |
+| 最佳 eval_loss（step） | 1.6005（step 2900） | 1.6620（step 3620） |
+| @1 | 3.66%（183/5000） | 3.32%（166/5000） |
+| @10 | 7.40%（370/5000） | 6.50%（325/5000） |
+| @100 | 12.58%（629/5000） | 11.40%（570/5000） |
+| @1000 | 18.12%（906/5000） | 17.08%（854/5000） |
 
-> 待比較：train/eval loss 曲線、crack rate @K。**正式結論需等 run_16、run_17 訓練完成並跑完評估後才能補上。**
+![Learning Rate Comparison — run_18 vs run_17](../../gen/results/comparison_run18_vs_run17_Mistral-7B_learning_rate_result.png)
+
+左：run_18（lr=2e-4）train/eval loss（log scale），best checkpoint-2900 之後未再刷新；中：run_17（lr=5e-4）train/eval loss（log scale），step ~3620 後急遽發散；右：crack rate @K，run_18 四個 K 值皆略高於 run_17。
 
 ---
 
@@ -136,13 +140,6 @@ Mistral-7B-v0.1 / Qwen3-4B · constrained_beam_search（5,000 筆測試）
 
 > **觀察：** 兩者都在 lr=5e-4 下發散、從未恢復，差異只在發散時間點（batch=64 在 step 180 就觸底，batch=4 撐到 step 3620）。用各自最佳 checkpoint 重新評估後，run_17（batch=4）四個 K 值全面領先 run_15（batch=64），@1000 領先 +2.28pp（17.08% vs 14.80%）。但要注意 run_15 的 crack rate 是用發散後的劣化權重跑的，run_17 是用最佳點權重跑的，這個比較同時混雜了「batch size」與「lora_final 選點方式」兩個變因，不是嚴格乾淨的 batch-size-only 對照。
 
----
-
-## 5. LoRA 容量（Mistral-7B-v0.1）
-
-### 5.1 r=16/alpha=32/[q,k,v] vs r=32/alpha=64/[+o_proj,+gate_proj]：run_10 vs run_15
-
-
 
 ---
 
@@ -151,8 +148,8 @@ Mistral-7B-v0.1 / Qwen3-4B · constrained_beam_search（5,000 筆測試）
 - [id5_run10_Mistral-7B_id5_COMB_constrained_beam_search.md](id5_run10_Mistral-7B_id5_COMB_constrained_beam_search.md)
 - [comparison_id5run7_vs_id6run12_Mistral-7B_constrained_beam_search.md](comparison_id5run7_vs_id6run12_Mistral-7B_constrained_beam_search.md)（run_7 vs run_12 完整版報告，含 prompt 設計對照細節）
 - [id5_run15_Mistral-7B_id5_constrained_beam_search.md](id5_run15_Mistral-7B_id5_constrained_beam_search.md)
-- [id5_run16_Mistral-7B_id5_constrained_beam_search.md](id5_run16_Mistral-7B_id5_constrained_beam_search.md)
 - [id5_run17_Mistral-7B_id5_constrained_beam_search.md](id5_run17_Mistral-7B_id5_constrained_beam_search.md)
+- [id5_run18_Mistral-7B_id5_constrained_beam_search.md](id5_run18_Mistral-7B_id5_constrained_beam_search.md)
 - [id5_run8_Qwen3-4B_id5_constrained_beam_search.md](id5_run8_Qwen3-4B_id5_constrained_beam_search.md)（run_8 crack rate 來源）
 - [id3_Qwen3-4B_id4_constrained_beam_search.md](id3_Qwen3-4B_id4_constrained_beam_search.md)（run_3 crack rate 來源）
 - [comparison_Mistral-7B_vs_Qwen3-4B_id5_constrained_beam_search.md](comparison_Mistral-7B_vs_Qwen3-4B_id5_constrained_beam_search.md)（Mistral vs Qwen 完整版報告，含 run_6 三方比較）
