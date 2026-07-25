@@ -167,3 +167,5 @@ External: `models/semantic-guesser/` — clone manually; required for both pipel
 **Change log:** Any modification to code or config must be recorded in `docs/logs/YYYYMMDD_modify.md`. Append to today's log if it exists; create a new file if it does not.
 
 **Git:** Always ask the user to confirm the commit message and branches before pushing. Never decide the message unilaterally.
+
+**tensorboard**: you need to detect the host first, if the hostname is `u4996812` or `nano5.nchc,org.tw` , you can not use the tensorboard instruction to let me connect the network.
