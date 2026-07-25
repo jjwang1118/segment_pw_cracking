@@ -74,9 +74,10 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     template_id=2: structure-only, includes raw tag strings in structure/detail text
     template_id=3: structure-only with placeholders, no raw tag strings
     """
-    passwords   = batch.get("Password", batch.get("passwords", []))
-    tokens_col  = batch.get("Tokens", [])
-    tags_col    = batch.get("Tags", [])
+    passwords    = batch.get("Password", batch.get("passwords", []))
+    tokens_col   = batch.get("Tokens", [])
+    tags_col     = batch.get("Tags", [])
+    siblings_col = batch.get("Siblings", [None] * len(passwords))
 
     prompt_len = len(prompt_ids)
 
@@ -84,7 +85,7 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     all_attention_mask = []
     all_labels         = []
 
-    for password, tokens, tags in zip(passwords, tokens_col, tags_col):
+    for password, tokens, tags, siblings in zip(passwords, tokens_col, tags_col, siblings_col):
         password   = str(password) if password is not None else ""
         token_list = tokens.split("|") if tokens else []
         tag_list   = tags.split("|")   if tags   else []
@@ -134,6 +135,17 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             # plain inline: same <tag> structure as id=5, but after a literal newline, no JSON wrapper
             structure = ''.join(f"<{tag}>" for tag in tag_list)
             knowledge_text = "\n" + structure
+        elif template_id == 7:
+            # id=5's inline <tag> structure + sibling passwords (same account's prior passwords).
+            # Siblings is a json.dumps'd list (run_pcfg_combine_sibling.py) — decode once here and
+            # re-encode together with the structure in a single json.dumps call, so knowledge_text
+            # only ever has one level of JSON escaping.
+            structure = ''.join(f"<{tag}>" for tag in tag_list)
+            siblings_list = json.loads(siblings) if siblings else []
+            knowledge_text = json.dumps({
+                "password structure": structure,
+                "sibling passwords": siblings_list
+            }, ensure_ascii=False)
         else:
             knowledge_text = json.dumps({
                 "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),

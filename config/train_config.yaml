@@ -42,14 +42,13 @@ train:
     label_smoothing_factor: 0
 
   lora_config:
-    r: 32
+    r: 16
     target_modules:
     - q_proj
     - k_proj
     - v_proj
-    - o_proj
-    - gate_proj
-    lora_alpha: 64
+
+    lora_alpha: 32
     lora_dropout: 0.2
     bias: none
     init_lora_weights: true

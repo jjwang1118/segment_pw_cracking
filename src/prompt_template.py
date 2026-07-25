@@ -64,6 +64,15 @@ def _get_indice(id):
             "As a targeted password guessing model, your task is to utilize the provided "
             "structure information to guess the corresponding password."
         )
+    # id=7: id=5's password structure + sibling passwords (same account's prior passwords), JSON-wrapped
+    if id == 7:
+        return (
+            "As a targeted password guessing model, your task is to generate likely password "
+            "candidates that match the given password information. The password structure is "
+            "represented as a sequence of <tag> placeholders, and sibling passwords, if any, are "
+            "prior passwords from the same account. Do not output the tag placeholders. "
+            "Generate only the password characters for each segment in order."
+        )
     raise ValueError(f"Unknown prompt id: {id}")
 
 
@@ -220,6 +229,26 @@ def prompt_convert_inline_plain(data: dict, template: str) -> str:
     tags = data['Tags'].split('|') if data.get('Tags') else []
     structure = ''.join(f"<{tag}>" for tag in tags)
     return template + "\n" + structure
+
+
+def prompt_convert_sibling_tag(data: dict, template: str) -> str:
+    """Template G (id=7): id=5's inline <tag> structure + sibling passwords (same account's prior passwords).
+
+    `data['Siblings']` is a json.dumps'd list (produced by run_pcfg_combine_sibling.py); it is decoded
+    once here and re-encoded together with the tag structure in a single json.dumps call, so the final
+    prompt text only ever has one level of JSON escaping (no double-encoding artifacts).
+    """
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    structure = ''.join(f"<{tag}>" for tag in tags)
+
+    siblings_raw = data.get('Siblings')
+    siblings = json.loads(siblings_raw) if siblings_raw else []
+
+    knowledge = json.dumps({
+        "password structure": structure,
+        "sibling passwords": siblings
+    }, ensure_ascii=False)
+    return template + knowledge
 
 
 def get_prompt_template(id: int) -> str:

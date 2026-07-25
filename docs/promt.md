@@ -191,3 +191,30 @@ dragon
 | Post-processing | 剝離 `\n` token 後拼接 | 剝離 `\n` token 後拼接 |
 | 與 id=3 差異 | assistant 輸出格式 | assistant 輸出格式 + system text |
 | 與 id=4 差異 | 描述改自然語言（無 tag 名） | 描述改自然語言（無 tag 名） |
+
+
+#### id=7 `Combine the sister password and the tag information`
+
+在 id=5 的 `password structure`（inline `<tag>`）基礎上，加入 `sibling passwords`（同帳號歷史密碼，取前 5 筆，無則為空陣列 `[]`，此時等價於 id=5）。訓練與推論的 User prompt **完全相同**。
+
+**訓練時**：
+
+```
+[User]
+As a targeted password guessing model, your task is to generate likely password candidates that match the given password information. The password structure is represented as a sequence of <tag> placeholders, and sibling passwords, if any, are prior passwords from the same account. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<nn><number2><special1>", "sibling passwords": ["dragon98$"]}
+
+[Assistant]
+d r a g o n 9 9 !
+```
+
+**推論時**：
+
+```
+[User]
+...{"password structure": "<nn><number2><special1>", "sibling passwords": ["dragon98$"]}
+
+[Assistant]
+▶ model generates here
+```
+
+> 注意：id=7 的 User prompt 在訓練與推論時完全相同；`sibling passwords` 只取「同帳號、非目標密碼」的歷史密碼，不含目標密碼本身。

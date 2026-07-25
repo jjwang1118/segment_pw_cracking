@@ -9,6 +9,7 @@ datasets/cleaned/
 datasets/processed/
 datasets/*.txt
 datasets/sister_password/*.jsonl
+datasets/passllm/
 
 # Generated outputs
 gen/tokenized/
