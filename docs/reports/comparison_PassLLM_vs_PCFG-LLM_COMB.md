@@ -173,3 +173,85 @@ PassLLM 端新增 `run_02`（`gen/passllm/run_02/`），對照第 1–6 節既�
 - **PassLLM 在各 K 皆領先本研究五次訓練**，@1000 領先幅度介於 +2.96pp（vs run_18）至 +6.28pp（vs run_15）。但第 6 節已指出，PassLLM 猜中的密碼有 99%+ 依賴「姊妹密碼」（同帳號舊密碼）線索，本研究方法不使用此線索、僅憑 tag 結構猜測，兩者鎖定的威脅情境不同，數字不宜直接視為「方法優劣」。
 - **PassLLM @1 為 0%**：`dynamic_beam_search` 搜尋策略與本研究 `constrained_beam_search` 不同，加上 PassLLM 缺乏姊妹密碼時幾乎猜不中（第 6 節），首位猜測命中率偏低。
 - **本研究內部排序（@1000）：** run_18（18.12%，訓練中）> run_17（17.08%，發散前最佳點）> run_10（17.02%，完整訓練）≈ run_13（16.70%，僅 prompt 格式不同）> run_15（14.80%，高 lr＋大 LoRA 導致過擬合發散）。run_18 目前為最佳，但尚未訓練完成，需待完整結果出爐後再確認是否維持領先。
+
+---
+
+## 9. 全體比較：PassLLM vs 本研究 run_10/13/15/17/18/19（COMB, Mistral-7B-v0.1）
+
+第 6、8 節已指出：PassLLM 猜中密碼 99%+ 依賴姊妹密碼（`"Old password"`）線索，而第 8 節的 run_10/13/15/17/18 完全不使用姊妹密碼、只憑 tag 結構猜測，兩者鎖定的是不同威脅情境，數字不宜直接視為方法優劣。run_19（`docs/reports/id7_run19_Mistral-7B_id7_constrained_beam_search.md`）是本研究第一個在 prompt 中加入 `sibling passwords` 的訓練（prompt id=7，見 [docs/promt.md](../promt.md) id=7 章節），本節在第 8 節既有的六方比較基礎上加入 run_19，一併列出訓練參數、完整 prompt 範例與 crack rate 對照。
+
+### 9.1 訓練參數對照
+
+在第 8.1 節六方表格上加入 run_19 一欄：
+
+| 項目 | PassLLM | run_10 | run_13 | run_15 | run_17 | run_18 | run_19 |
+|---|---|---|---|---|---|---|---|
+| 資料集 | COMB | COMB | COMB | COMB | COMB | COMB | COMB（`combine/backoff` + `Siblings`） |
+| prompt_template_id | 0 | 5 | 6 | 5 | 5 | 5 | 7 |
+| LoRA r / alpha | 16 / 32 | 16 / 32 | 16 / 32 | 32 / 64 | 32 / 64 | 32 / 64 | 16 / 32 |
+| target_modules | q,k,v_proj | q,k,v_proj | q,k,v_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v_proj |
+| lora_dropout | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 |
+| per_device_train_batch_size | 4 | 64 | 64 | 64 | 4 | 4 | 4 |
+| gradient_accumulation_steps | 64 | 64 | 64 | 64 | 64 | 64 | 64 |
+| 有效 batch size | 256 | 4,096 | 4,096 | 4,096 | 256 | 256 | 256 |
+| learning_rate | 5e-4 | 2e-4 | 2e-4 | 5e-4 | 5e-4 | 2e-4 | 2e-4 |
+| num_train_epochs（計畫） | 3 | 10 | 10 | 10 | 10 | 10 | 10 |
+| 最終／最佳 eval_loss | 未提供 | 1.649（完成） | 1.651（完成） | 2.327（↑，已發散） | 1.662（step 3620，發散前最佳點） | 1.601（step 2900，目前最佳點） | 1.260（step 5100，最佳點） |
+| 訓練狀態 | 完成 | 完成（650/650 步） | 完成（650/650 步） | 完成但已發散（10 epoch 跑完，末端劣化） | 於 step ~3966/10,250 被取消，發散 | **訓練中**，已到 step ~4385/10,250（約43%） | 完成（10,250/10,250 步跑滿） |
+| 評估用 checkpoint | `mistral_7b_COMB/final` | `run_10/lora_final`（=最終步） | `run_13/lora_final`（=最終步） | `run_15/lora_final`（=最終步，發散後） | `run_17/lora_final`（=checkpoint-3620，手動截斷） | `run_18/lora_final_2900`（=checkpoint-2900，手動截斷） | `run_19/lora_final`（=checkpoint-5100，`load_best_model_at_end` 自動選點） |
+
+> run_19 是唯一 prompt 中含 `sibling passwords` 的一組，其餘六者（PassLLM 除外）皆只有 tag 結構、無姊妹密碼；LoRA 設定上 run_19 與 run_10/13（r16/a32/qkv-only）相同，與 PassLLM 相比則只差 learning_rate（2e-4 vs 5e-4）與訓練 epoch 是否跑滿。詳細討論見第 9.4 節。
+
+### 9.2 完整 Prompt 對照（同一帳號實例）
+
+以測試集 `index=2`（密碼 `shark71542`，姊妹密碼 `buffalo12`）為例，兩側 `model_input` 逐字擷取如下：
+
+**PassLLM（`gen/passllm/run_01/input_output.jsonl`，index=2）：**
+
+```
+<s>As a targeted password guessing model, your task is to utilize the provided account information to guess the password.{"Old password": ["buffalo12"]}
+```
+
+**本研究 run_19（`gen/eval_results_id7_run_19_Mistral7B_id7_COMB.jsonl`，index=2）：**
+
+```
+As a targeted password guessing model, your task is to generate likely password candidates that match the given password information. The password structure is represented as a sequence of <tag> placeholders, and sibling passwords, if any, are prior passwords from the same account. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<shark.n.01><number5>", "sibling passwords": ["buffalo12"]}
+```
+
+> 兩者都把同一筆姊妹密碼 `"buffalo12"` 放進 prompt，差異在於 run_19 額外提供了 `"password structure": "<shark.n.01><number5>"`（tag 結構線索），PassLLM 完全不使用結構資訊、只靠姊妹密碼與模型自身學到的密碼分布猜測。此例中 PassLLM 與 run_19 皆未在 @1000 內命中 `shark71542`。
+
+### 9.3 Crack Rate 對照
+
+| @K | PassLLM | run_10 | run_13 | run_15 | run_17 | run_18 | run_19 |
+|---|---|---|---|---|---|---|---|
+| @1 | 0 / 5,000（0.00%） | 155 / 5,000（3.10%） | 159 / 5,000（3.18%） | 137 / 5,000（2.74%） | 166 / 5,000（3.32%） | 183 / 5,000（3.66%） | 682 / 5,000（**13.64%**） |
+| @10 | 425 / 5,000（8.50%） | 360 / 5,000（7.20%） | 348 / 5,000（6.96%） | 294 / 5,000（5.88%） | 325 / 5,000（6.50%） | 370 / 5,000（7.40%） | 1,218 / 5,000（**24.36%**） |
+| @50 | 765 / 5,000（15.30%） | 495 / 5,000（9.90%） | 496 / 5,000（9.92%） | 441 / 5,000（8.82%） | 485 / 5,000（9.70%） | 547 / 5,000（10.94%） | 1,459 / 5,000（**29.18%**） |
+| @100 | 914 / 5,000（18.28%） | 578 / 5,000（11.56%） | 576 / 5,000（11.52%） | 516 / 5,000（10.32%） | 570 / 5,000（11.40%） | 629 / 5,000（12.58%） | 1,552 / 5,000（**31.04%**） |
+| @500 | 1,020 / 5,000（20.40%） | 756 / 5,000（15.12%） | 758 / 5,000（15.16%） | 674 / 5,000（13.48%） | 766 / 5,000（15.32%） | 819 / 5,000（16.38%） | 1,735 / 5,000（**34.70%**） |
+| @1000 | 1,054 / 5,000（21.08%） | 851 / 5,000（17.02%） | 835 / 5,000（16.70%） | 740 / 5,000（14.80%） | 854 / 5,000（17.08%） | 906 / 5,000（18.12%） | 1,802 / 5,000（**36.04%**） |
+
+> run_10/13/15/17/18 的 @1/@10/@100/@1000 數字與第 8.2 節一致；@50/@500 由對應的 `gen/eval_results_id5_run_10/15/17/18_Mistral7B_..._COMB.jsonl`、`gen/eval_results_id6_run_13_Mistral7B_id6_COMB.jsonl` 重新統計補上。
+
+### 9.4 結果圖表
+
+![PassLLM vs run_10/13/15/17/18/19 Comparison](../../gen/results/comparison_PassLLM_vs_run10-13-15-17-18-19_Mistral-7B_COMB_result.png)
+
+### 9.5 Tag Type 占比
+
+PassLLM 無 tag 結構，故僅列本研究六個 run 已破解密碼（@1000）的 Tag Type 組成（分類規則同 `id7_run19` 報告）：
+
+![本研究各 Run Tag Type 組成對照](../../gen/results/comparison_run10-13-15-17-18-19_tagtype_pies_result.png)
+
+| Run | Cracked (@1000) | backoff only | pos / pos_semantic |
+|---|---|---|---|
+| run_10（id5） | 851 | 44（5.2%） | 807（94.8%） |
+| run_13（id6） | 835 | 44（5.3%） | 791（94.7%） |
+| run_15（id5） | 740 | 31（4.2%） | 709（95.8%） |
+| run_17（id5） | 854 | 47（5.5%） | 807（94.5%） |
+| run_18（id5） | 906 | 53（5.8%） | 853（94.2%） |
+| run_19（id7） | 1,802 | 452（25.1%） | 1,350（74.9%） |
+
+**觀察：** run_10/13/15/17/18 幾乎全靠 pos/pos_semantic 語意線索命中，backoff only 僅占 4–6%；run_19 加入姊妹密碼後 backoff only 占比跳升到 25.1%，顯示姊妹密碼補強的正是「純結構、無語意線索」這段本來最弱的猜測情境。
+
+
