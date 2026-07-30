@@ -49,7 +49,11 @@ venv/
 # Job logs
 job-*.out
 eval-*.out
+clone-*.out
 *.log
+
+# Contains HF_TOKEN, do not track
+clone_model.sh
 
 # TensorBoard
 runs/

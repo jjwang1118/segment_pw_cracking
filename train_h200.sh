@@ -20,4 +20,4 @@ conda activate llm_pcfg_cracking_model
 #   python run_train.py --resume checkpoints/<model_name>/run_N/checkpoint-XXXX
 # 續訓會沿用同一個 run_N 目錄，接續原本的 optimizer/scheduler 狀態與剩餘 steps，
 # 不會重新開始或重算 epoch（細節見 util/train.py 的 resume_from_checkpoint 邏輯）。
-python run_train.py
+python run_train.py 

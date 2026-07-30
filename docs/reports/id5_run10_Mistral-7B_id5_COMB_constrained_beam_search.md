@@ -1,5 +1,7 @@
 # Eval Report: Mistral-7B-v0.1 · Template id=5 · constrained_beam_search（COMB dataset）
 
+來源：[results/train/job-258508.out](../../results/train/job-258508.out)、[results/eval/eval-258985.out](../../results/eval/eval-258985.out)
+
 ## 實驗設定
 
 | 項目 | 值 |
@@ -15,6 +17,52 @@
 | 搜尋法（fallback） | `dynamic_beam_search`（當 tags 含 pos/pos_semantic 時） |
 | 測試集 | `datasets/processed/semanticPCFG/COMB/backoff/split/test_data.jsonl`（訓練資料同為 COMB，非 000webhost） |
 | 來源 log | `results/eval/eval-258985.out` |
+
+### Trainer 超參數（`results/train/job-258508.out`）
+
+| 參數 | 值 |
+|---|---|
+| 訓練資料 | `datasets/processed/semanticPCFG/COMB/backoff/split/train_data.jsonl`（262,263 筆） |
+| 驗證資料 | 同目錄 `test_data.jsonl`（13,513 筆） |
+| per_device_train_batch_size | 64 |
+| gradient_accumulation_steps | 64（有效 batch = 4096） |
+| per_device_eval_batch_size | 32 |
+| num_train_epochs | 10 |
+| total_steps / max_steps | 640（log 開頭列印）／650（trainer_state 實際 global_step） |
+| warmup_steps | 64 |
+| learning_rate | 2e-4 |
+| lr_scheduler_type | linear |
+| weight_decay | 0.01 |
+| optim | adamw_torch |
+| adam_beta1 / beta2 / epsilon | 0.9 / 0.999 / 1e-8 |
+| max_grad_norm | 1.0 |
+| bf16 / fp16 | true / false |
+| gradient_checkpointing | true |
+| seed / data_seed | 42 |
+| eval_strategy / eval_steps | steps / 20 |
+| save_strategy / save_steps | steps / 20 |
+| logging_steps | 10 |
+
+### LoRA 設定（`adapter_config.json`）
+
+| 參數 | 值 |
+|---|---|
+| r | 16 |
+| lora_alpha | 32 |
+| lora_dropout | 0.2 |
+| target_modules | `q_proj`, `k_proj`, `v_proj` |
+| bias | none |
+| init_lora_weights | true |
+| task_type | CAUSAL_LM |
+
+### 訓練結果（log 尾端）
+
+| 指標 | 值 |
+|---|---|
+| 最終 train_loss | 1.74 |
+| 最終 eval_loss（epoch 10） | 1.649 |
+| train_runtime | 3.043e4 秒（約 8.45 小時） |
+| train_samples_per_second | 86.18 |
 
 ## Crack Rate
 

@@ -254,4 +254,108 @@ PassLLM 無 tag 結構，故僅列本研究六個 run 已破解密碼（@1000）
 
 **觀察：** run_10/13/15/17/18 幾乎全靠 pos/pos_semantic 語意線索命中，backoff only 僅占 4–6%；run_19 加入姊妹密碼後 backoff only 占比跳升到 25.1%，顯示姊妹密碼補強的正是「純結構、無語意線索」這段本來最弱的猜測情境。
 
+### 9.6 run_19 各 @K 已破解密碼的 pos_semantic 標籤比例
 
+第 9.5 節只看 @1000 這一個切點的 tag type 組成，這裡把同一套分類規則（密碼 tags 中只要有任一 segment 屬於 pos_semantic，就算含 pos_semantic 標籤；其餘歸為「不含 pos_semantic」，即 backoff/pos）分別套用在 @1、@10、@100、@1000 四個切點，兩條線互為餘數（相加 = 100%），觀察「隨著容許猜測數增加，已破解密碼中含語意線索 vs 純結構的比例如何此消彼長」：
+
+| @K | 已破解 | 含 pos_semantic | 比例 | 不含 pos_semantic | 比例 |
+|---|---|---|---|---|---|
+| @1 | 682 | 293 | 42.96% | 389 | 57.04% |
+| @10 | 1,218 | 543 | 44.58% | 675 | 55.42% |
+| @100 | 1,552 | 743 | 47.87% | 809 | 52.13% |
+| @1000 | 1,802 | 889 | 49.33% | 913 | 50.67% |
+
+![run_19 已破解密碼 pos_semantic 標籤比例](../../gen/results/run_19_Mistral-7B_id7_semantic_ratio_result.png)
+
+**觀察：** 「含 pos_semantic」比例隨 @K 增加而持續上升（42.96% → 49.33%），「不含 pos_semantic」則對應下降（57.04% → 50.67%），兩者在 @1000 附近逐漸靠近 50/50。顯示語意線索較豐富（含 WordNet synset 標籤）的密碼在低猜測次數（@1）時相對「較不容易」是猜中的那一批——換句話說，@1 就猜中的密碼裡，結構單純（backoff/pos，無語意標籤）的比例明顯較高（57.04%）；語意標籤密碼要在更大的候選集合（@1000）中才較容易被涵蓋到，可能與其候選空間（同語意類別下的字彙選擇）比純結構密碼更大有關。
+
+---
+
+## 10. 加入 Qwen3-4B run_9（同 id=7 設定，跨底模對照）
+
+run_9（`docs/reports/id7_run9_Qwen3-4B_id7_constrained_beam_search.md`）是本研究第一個在 Qwen3-4B 底模上使用 prompt id=7（tag 結構 + sibling passwords）訓練的 run，資料集、prompt 內容、LoRA 超參數（r16/α32/dropout0.2/qkv-only）、learning_rate（2e-4）皆與 run_19（Mistral-7B）完全相同，唯一差異是底模。本節在第 9 節七方比較基礎上加入 run_9，形成八方對照。
+
+> **⚠️ 重要限制：** run_9 訓練截至本節撰寫時**尚未跑完**（`max_steps=10,250`，目前進度約 86%），以下數字用的是訓練中途另存的 `lora_final_6140`（step 6,140），**不是**目前已知的最佳點（step 6,800，eval_loss 1.2811，僅比 6,140 的 1.2833 略低）也不是最終權重。下表與圖表已明確標註此差異，待 run_9 訓練跑完、用最終/最佳權重重新評估後應更新本節。
+
+### 10.1 訓練參數對照
+
+在第 9.1 節七方表格上加入 run_9 一欄：
+
+| 項目 | PassLLM | run_10 | run_13 | run_15 | run_17 | run_18 | run_19 | run_9 |
+|---|---|---|---|---|---|---|---|---|
+| 底模 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | **Qwen3-4B** |
+| 資料集 | COMB | COMB | COMB | COMB | COMB | COMB | COMB（`combine/backoff` + `Siblings`） | COMB（`combine/backoff` + `Siblings`） |
+| prompt_template_id | 0 | 5 | 6 | 5 | 5 | 5 | 7 | 7 |
+| LoRA r / alpha | 16 / 32 | 16 / 32 | 16 / 32 | 32 / 64 | 32 / 64 | 32 / 64 | 16 / 32 | 16 / 32 |
+| target_modules | q,k,v_proj | q,k,v_proj | q,k,v_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v_proj | q,k,v_proj |
+| lora_dropout | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 |
+| per_device_train_batch_size | 4 | 64 | 64 | 64 | 4 | 4 | 4 | 4 |
+| gradient_accumulation_steps | 64 | 64 | 64 | 64 | 64 | 64 | 64 | 64 |
+| 有效 batch size | 256 | 4,096 | 4,096 | 4,096 | 256 | 256 | 256 | 256 |
+| learning_rate | 5e-4 | 2e-4 | 2e-4 | 5e-4 | 5e-4 | 2e-4 | 2e-4 | 2e-4 |
+| num_train_epochs（計畫） | 3 | 10 | 10 | 10 | 10 | 10 | 10 | 10 |
+| 最終／最佳 eval_loss | 未提供 | 1.649（完成） | 1.651（完成） | 2.327（↑，已發散） | 1.662（step 3620，發散前最佳點） | 1.601（step 2900，目前最佳點） | 1.260（step 5100，最佳點） | 1.283（step 6140，**評估用權重，非最佳點**；目前最佳點 1.281 @ step 6800） |
+| 訓練狀態 | 完成 | 完成（650/650 步） | 完成（650/650 步） | 完成但已發散（10 epoch 跑完，末端劣化） | 於 step ~3966/10,250 被取消，發散 | **訓練中**，已到 step ~4385/10,250（約43%） | 完成（10,250/10,250 步跑滿） | **訓練中**，已到 step ~8780/10,250（約86%） |
+| 評估用 checkpoint | `mistral_7b_COMB/final` | `run_10/lora_final`（=最終步） | `run_13/lora_final`（=最終步） | `run_15/lora_final`（=最終步，發散後） | `run_17/lora_final`（=checkpoint-3620，手動截斷） | `run_18/lora_final_2900`（=checkpoint-2900，手動截斷） | `run_19/lora_final`（=checkpoint-5100，`load_best_model_at_end` 自動選點） | `run_9/lora_final_6140`（=checkpoint-6140，訓練中途手動另存，**非最佳點**） |
+
+### 10.2 Prompt 格式
+
+run_9 與 run_19 使用完全相同的 prompt template（id=7），以測試集 `index=2`（密碼 `shark71542`，姊妹密碼 `buffalo12`）為例，run_9 端的 `model_input` 與第 9.2 節列出的 run_19 版本逐字相同：
+
+```
+As a targeted password guessing model, your task is to generate likely password candidates that match the given password information. The password structure is represented as a sequence of <tag> placeholders, and sibling passwords, if any, are prior passwords from the same account. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<shark.n.01><number5>", "sibling passwords": ["buffalo12"]}
+```
+
+> 兩個 run 的 prompt 文字完全一致（差異只在底模與 tokenizer），因此不重複列出完整對照，細節與 PassLLM 側的比較請見第 9.2 節。
+
+### 10.3 Crack Rate 對照
+
+在第 9.3 節七方表格上加入 run_9 一欄：
+
+| @K | PassLLM | run_10 | run_13 | run_15 | run_17 | run_18 | run_19 | run_9 |
+|---|---|---|---|---|---|---|---|---|
+| @1 | 0 / 5,000（0.00%） | 155 / 5,000（3.10%） | 159 / 5,000（3.18%） | 137 / 5,000（2.74%） | 166 / 5,000（3.32%） | 183 / 5,000（3.66%） | 682 / 5,000（**13.64%**） | 666 / 5,000（**13.32%**） |
+| @10 | 425 / 5,000（8.50%） | 360 / 5,000（7.20%） | 348 / 5,000（6.96%） | 294 / 5,000（5.88%） | 325 / 5,000（6.50%） | 370 / 5,000（7.40%） | 1,218 / 5,000（**24.36%**） | 1,197 / 5,000（**23.94%**） |
+| @50 | 765 / 5,000（15.30%） | 495 / 5,000（9.90%） | 496 / 5,000（9.92%） | 441 / 5,000（8.82%） | 485 / 5,000（9.70%） | 547 / 5,000（10.94%） | 1,459 / 5,000（**29.18%**） | 1,427 / 5,000（**28.54%**） |
+| @100 | 914 / 5,000（18.28%） | 578 / 5,000（11.56%） | 576 / 5,000（11.52%） | 516 / 5,000（10.32%） | 570 / 5,000（11.40%） | 629 / 5,000（12.58%） | 1,552 / 5,000（**31.04%**） | 1,507 / 5,000（**30.14%**） |
+| @500 | 1,020 / 5,000（20.40%） | 756 / 5,000（15.12%） | 758 / 5,000（15.16%） | 674 / 5,000（13.48%） | 766 / 5,000（15.32%） | 819 / 5,000（16.38%） | 1,735 / 5,000（**34.70%**） | 1,703 / 5,000（**34.06%**） |
+| @1000 | 1,054 / 5,000（21.08%） | 851 / 5,000（17.02%） | 835 / 5,000（16.70%） | 740 / 5,000（14.80%） | 854 / 5,000（17.08%） | 906 / 5,000（18.12%） | 1,802 / 5,000（**36.04%**） | 1,778 / 5,000（**35.56%**） |
+
+> run_9 數字取自 `gen/eval_results_id7_run_9_Qwen4B_id7_COMB.jsonl`（`eval-285824.out`），@1/@10/@100/@1000 與 [id7_run9 報告](id7_run9_Qwen3-4B_id7_constrained_beam_search.md) 一致，@50/@500 另外統計補上。
+
+### 10.4 結果圖表
+
+![PassLLM vs run_10/13/15/17/18/19/9 Comparison](../../gen/results/comparison_PassLLM_vs_run10-13-15-17-18-19-9_COMB_result.png)
+
+> 圖中 run_9 用紫色虛線標示，以區別於已完整訓練的其餘各線（run_15 的虛線代表「已發散」，run_9 的虛線代表「訓練尚未完成、評估用中途權重」，兩者虛線含義不同，見圖例與各自章節說明）。
+
+### 10.5 Tag Type 占比
+
+![本研究各 Run Tag Type 組成對照（含 run_9）](../../gen/results/comparison_run10-13-15-17-18-19-9_tagtype_pies_result.png)
+
+| Run | 底模 | Cracked (@1000) | backoff only | pos / pos_semantic |
+|---|---|---|---|---|
+| run_10（id5） | Mistral-7B | 851 | 44（5.2%） | 807（94.8%） |
+| run_13（id6） | Mistral-7B | 835 | 44（5.3%） | 791（94.7%） |
+| run_15（id5） | Mistral-7B | 740 | 31（4.2%） | 709（95.8%） |
+| run_17（id5） | Mistral-7B | 854 | 47（5.5%） | 807（94.5%） |
+| run_18（id5） | Mistral-7B | 906 | 53（5.8%） | 853（94.2%） |
+| run_19（id7） | Mistral-7B | 1,802 | 452（25.1%） | 1,350（74.9%） |
+| run_9（id7，中途 ckpt） | Qwen3-4B | 1,778 | 458（25.8%） | 1,320（74.2%） |
+
+
+
+### 10.6 run_9 各 @K 已破解密碼的 pos_semantic 標籤比例
+
+分類規則與計算方式同第 9.6 節（run_19，含 pos_semantic vs 不含 pos_semantic 兩條互為餘數的線），套用在 run_9 的評估結果上：
+
+| @K | 已破解 | 含 pos_semantic | 比例 | 不含 pos_semantic | 比例 |
+|---|---|---|---|---|---|
+| @1 | 666 | 275 | 41.29% | 391 | 58.71% |
+| @10 | 1,197 | 528 | 44.11% | 669 | 55.89% |
+| @100 | 1,507 | 709 | 47.05% | 798 | 52.95% |
+| @1000 | 1,778 | 866 | 48.71% | 912 | 51.29% |
+
+![run_9 已破解密碼 pos_semantic 標籤比例](../../gen/results/run_9_Qwen3-4B_id7_semantic_ratio_result.png)
+
+**觀察：** 走勢與 run_19 幾乎完全一致（「含 pos_semantic」同樣隨 @K 上升而上升，41.29% → 48.71%；「不含 pos_semantic」對應下降，58.71% → 51.29%），且每個 @K 的比例都只比 run_19 低約 0.6–1.7 個百分點（@1000：48.71% vs 49.33%），差距幅度與第 10.3 節 crack rate 的差距（同樣約 0.5pp 上下）相近。這進一步支持第 10.6 節的推論：run_9 目前落後 run_19 的部分，看起來是整體幅度上的小幅落後（可能來自訓練未完成），而非「哪種類型的密碼特別弱」的結構性差異——兩個底模在「語意線索密碼需要更大候選集合才容易命中」這個現象上的表現是一致的。
