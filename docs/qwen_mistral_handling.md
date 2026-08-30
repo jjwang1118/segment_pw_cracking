@@ -26,7 +26,7 @@ _p2 = tokenizer("r", add_special_tokens=False)["input_ids"][-1]
 _is_spm = tokenizer.decode([_p1, _p2]) != "dr"
 ```
 
-用「兩字元組合 decode」探測 tokenizer 家族，而非單字元探測——因為 `decode([▁d])` 單獨 decode 也會回傳 `"d"`（無空格，SPM 在開頭不加前綴空格），只有組合 decode 才會暴露空格插入行為，是唯一可靠的判別方式（曾經因用單字元探測導致誤判，已於 `docs/logs/20260629_modify.md` 修正）。
+用「兩字元組合 decode」探測 tokenizer 家族，而非單字元探測——因為 `decode([▁d])` 單獨 decode 也會回傳 `"d"`（無空格，SPM 在開頭不加前綴空格），只有組合 decode 才會暴露空格插入行為，是唯一可靠的判別方式（曾經因用單字元探測導致誤判，已於 `docs/logs/202606_modify.md`（2026-06-29 一節） 修正）。
 
 判別結果目前兩個分支實作相同（直接查表 `tokenizer(w)["input_ids"][-1]`），差異只在於後續推論時是否需要去除空格（見下節）——保留分流是因為 SPM 分支的 `▁X` token ID 必須與 `encode_limit()` 訓練端用的映射完全一致，否則訓練目標與推論詞表會對不上。
 
@@ -95,6 +95,6 @@ lora_kind: lora
 - [run_eval.py](../run_eval.py) — `_needs_space_strip` 推論後處理
 - [util/train.py](../util/train.py) — `build_model_and_tokenizer()` / `apply_lora()`
 - [config/train_config.yaml](../config/train_config.yaml) — `lora_kind` + `lora_config` 預設值
-- [docs/logs/20260629_modify.md](logs/20260629_modify.md) — `get_alpa()` 偵測邏輯修正紀錄
+- [docs/logs/202606_modify.md#2026-06-29](logs/202606_modify.md#2026-06-29) — `get_alpa()` 偵測邏輯修正紀錄
 - [docs/reports/comparison_run6_vs_run7_Mistral-7B_id5_constrained_beam_search.md](reports/comparison_run6_vs_run7_Mistral-7B_id5_constrained_beam_search.md)
 - [docs/reports/comparison_Mistral-7B_vs_Qwen3-4B_id5_constrained_beam_search.md](reports/comparison_Mistral-7B_vs_Qwen3-4B_id5_constrained_beam_search.md)

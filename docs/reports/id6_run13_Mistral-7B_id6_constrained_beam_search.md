@@ -3,7 +3,7 @@
 來源：[results/train/job-260943.out](../../results/train/job-260943.out)、[results/eval/eval-261839.out](../../results/eval/eval-261839.out)
 
 > **注意：** 本報告原先不存在獨立檔案，run_13 的訓練/評估資料僅散見於 `param_compare.md`（§1.1）與
-> `comparison_PassLLM_vs_PCFG-LLM_COMB.md`（§9.1）。此份為補齊的完整版本；Trainer 超參數表中
+> `comparison_PassLLM_vs_PCFG-LLM_COMB.md`（§C.1）。此份為補齊的完整版本；Trainer 超參數表中
 > 除 log 可直接驗證的欄位（total_steps/warmup_steps/global_step/loss/train_runtime 等）外，其餘
 > 未在 log 開頭列印、且 run_13 未產生 `train_config_snapshot.json` 的欄位，依 `param_compare.md`
 > 明確標註「固定：LoRA r=16/alpha=32/[q,k,v]、learning_rate=2e-4、10 epoch……其餘參數保持相同」，

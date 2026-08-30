@@ -86,7 +86,7 @@
 
 ### Tag Type 分布（@1000）
 
-分類規則同 `docs/logs/20260722_modify.md` 所載（`pcfg_tags.py` 結構化 pattern → backoff；具名實體與 CLAWS7 標籤 → pos；WordNet synset → pos_semantic；密碼多個 segment 取「有 pos_semantic 就算 pos_semantic，否則有 pos 就算 pos，否則 backoff」），與 run_18 報告用同一組 total 數字（backoff=1,773 / pos=1,804 / pos_semantic=1,423）核對一致。
+分類規則同 `docs/logs/202607_modify.md`（2026-07-22 一節） 所載（`pcfg_tags.py` 結構化 pattern → backoff；具名實體與 CLAWS7 標籤 → pos；WordNet synset → pos_semantic；密碼多個 segment 取「有 pos_semantic 就算 pos_semantic，否則有 pos 就算 pos，否則 backoff」），與 run_18 報告用同一組 total 數字（backoff=1,773 / pos=1,804 / pos_semantic=1,423）核對一致。
 
 | Tag Type | Cracked | Total | Rate |
 |---|---|---|---|
