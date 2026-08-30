@@ -104,6 +104,11 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
         return prompt_convert_sibling_tag(
             {"Tags": entry.get("Tags"), "Siblings": entry.get("Siblings")}, system_prompt
         )
+    if template_id == 8:
+        from src.prompt_template import prompt_convert_multi_structure
+        return prompt_convert_multi_structure(
+            {"Tags": entry.get("Tags"), "CandTags": entry.get("CandTags")}, system_prompt
+        )
     raise ValueError(f"Unknown template_id: {template_id}")
 
 

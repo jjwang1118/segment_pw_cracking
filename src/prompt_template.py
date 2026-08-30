@@ -51,7 +51,9 @@ def _get_indice(id):
             "Do not output placeholder names. Output only the characters satisfying each slot constraint."
         )
     # inline: password structure is a sequence of <tag> placeholders, no descriptions
-    if id == 5:
+    # id=8 (multi-structure) reuses id=5's system prompt verbatim — the only difference
+    # is that id=8's JSON payload adds a "candidate structures" list (see prompt_convert_multi_structure)
+    if id == 5 or id == 8:
         return (
             "As a targeted password guessing model, your task is to generate likely password candidates "
             "that match the given tag structure. Each <tag> placeholder names the character class for "
@@ -247,6 +249,34 @@ def prompt_convert_sibling_tag(data: dict, template: str) -> str:
     knowledge = json.dumps({
         "password structure": structure,
         "sibling passwords": siblings
+    }, ensure_ascii=False)
+    return template + knowledge
+
+
+def prompt_convert_multi_structure(data: dict, template: str) -> str:
+    """Template H (id=8, multi-structcand): id=5's inline <tag> structure (primary) +
+    a list of alternative candidate structures for the *same* password.
+
+    The primary `password structure` is built from `data['Tags']` (the backoff tagging).
+    `data['CandTags']` is a json.dumps'd list of pipe-joined tag strings for the other
+    tag-types (pos, pos_semantic); each is turned into its own inline <tag> structure and
+    placed under "candidate structures". Decoded once here and re-encoded with the primary
+    structure in a single json.dumps call, so the prompt text only ever has one level of
+    JSON escaping (same pattern as prompt_convert_sibling_tag).
+    """
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    structure = ''.join(f"<{tag}>" for tag in tags)
+
+    cand_raw = data.get('CandTags')
+    cand_tag_strs = json.loads(cand_raw) if cand_raw else []
+    candidate_structures = [
+        ''.join(f"<{tag}>" for tag in cand.split('|')) if cand else ""
+        for cand in cand_tag_strs
+    ]
+
+    knowledge = json.dumps({
+        "password structure": structure,
+        "candidate structures": candidate_structures
     }, ensure_ascii=False)
     return template + knowledge
 

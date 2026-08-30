@@ -218,3 +218,43 @@ d r a g o n 9 9 !
 ```
 
 > 注意：id=7 的 User prompt 在訓練與推論時完全相同；`sibling passwords` 只取「同帳號、非目標密碼」的歷史密碼，不含目標密碼本身。
+
+---
+
+#### id=8 `prompt_convert_multi_structure`（multi-structcand）
+
+把「讀法 A（結構 1-1 → 1-N）」prompt 化：沿用 id=7 的 **list 機制**，但 list 裡裝的不是 sibling 密碼，而是**同一個目標密碼的其他候選結構**。同一密碼分別以三種 tag-type 標記（`backoff` / `pos` / `pos_semantic`），切分完全相同、只有 tag 顆粒度不同，三者互補（例如 `backoff` 保留 `mname`/`surname`/`city`，`pos_semantic` 對專有名詞塌成 `np1_unk`）。
+
+**System prompt = id=5，不變。** 主結構 `password structure` 用 **backoff**，另兩種 tag-type 進 `candidate structures`。訓練與推論的 User prompt **完全相同**。
+
+以 `dragon99!` 為例，三種 tag-type 的 inline 結構：
+
+| tag-type | inline 結構 | 角色 |
+|---|---|---|
+| backoff | `<dragon.n.01><number2><special1>` | 主（`password structure`） |
+| pos | `<nn1><number2><special1>` | 候選 |
+| pos_semantic | `<nn1_dragon.n.01><number2><special1>` | 候選 |
+
+**訓練時**：
+
+```
+[User]
+As a targeted password guessing model, your task is to generate likely password candidates that match the given tag structure. Each <tag> placeholder names the character class for that segment. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<dragon.n.01><number2><special1>", "candidate structures": ["<nn1><number2><special1>", "<nn1_dragon.n.01><number2><special1>"]}
+
+[Assistant]
+d r a g o n 9 9 !
+```
+
+**推論時**：
+
+```
+[User]
+As a targeted password guessing model, your task is to generate likely password candidates that match the given tag structure. Each <tag> placeholder names the character class for that segment. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<dragon.n.01><number2><special1>", "candidate structures": ["<nn1><number2><special1>", "<nn1_dragon.n.01><number2><special1>"]}
+
+[Assistant]
+▶ model generates here
+```
+
+> **id=8 vs id=5**：system prompt 完全相同，唯一差別是 JSON 多帶 `candidate structures`——構成乾淨 ablation（唯一變數＝「有沒有多餵候選結構」）。
+> **id=8 vs id=7**：骨架相同（id=5 結構 + JSON list），差別只在 list 語意——id=7 是同帳號 sibling 密碼、id=8 是同一密碼的其他 tag-type 候選結構。
+> **資料依賴**：目前 pipeline 每個 tagtype 各自獨立產 JSONL，三者未對齊；id=8 需另寫合併步驟（仿 `run_pcfg_combine_sibling.py`）把三種結構依密碼對齊打包。

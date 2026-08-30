@@ -78,6 +78,7 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     tokens_col   = batch.get("Tokens", [])
     tags_col     = batch.get("Tags", [])
     siblings_col = batch.get("Siblings", [None] * len(passwords))
+    candtags_col = batch.get("CandTags", [None] * len(passwords))
 
     prompt_len = len(prompt_ids)
 
@@ -85,7 +86,7 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     all_attention_mask = []
     all_labels         = []
 
-    for password, tokens, tags, siblings in zip(passwords, tokens_col, tags_col, siblings_col):
+    for password, tokens, tags, siblings, candtags in zip(passwords, tokens_col, tags_col, siblings_col, candtags_col):
         password   = str(password) if password is not None else ""
         token_list = tokens.split("|") if tokens else []
         tag_list   = tags.split("|")   if tags   else []
@@ -145,6 +146,21 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             knowledge_text = json.dumps({
                 "password structure": structure,
                 "sibling passwords": siblings_list
+            }, ensure_ascii=False)
+        elif template_id == 8:
+            # id=8 (multi-structcand): id=5's inline <tag> structure (primary, backoff) +
+            # candidate structures for the same password (pos, pos_semantic). CandTags is a
+            # json.dumps'd list of pipe-joined tag strings — decode once and re-encode with the
+            # primary structure in a single json.dumps call (one level of JSON escaping).
+            structure = ''.join(f"<{tag}>" for tag in tag_list)
+            cand_tag_strs = json.loads(candtags) if candtags else []
+            candidate_structures = [
+                ''.join(f"<{t}>" for t in cand.split('|')) if cand else ""
+                for cand in cand_tag_strs
+            ]
+            knowledge_text = json.dumps({
+                "password structure": structure,
+                "candidate structures": candidate_structures
             }, ensure_ascii=False)
         else:
             knowledge_text = json.dumps({
