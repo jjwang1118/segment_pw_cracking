@@ -14,6 +14,7 @@
 | **[Part B](#part-b--單項實驗prompt-格式敏感度與多次訓練彙整)** | 單項實驗 | B.1 新／舊 prompt 四方；B.2 五次訓練六方 | 舊 §7–8 |
 | **[Part C](#part-c--總合比較加入-sibling-passwords-的-run_19七方)** | 總合比較 | 加入 `sibling passwords` 的 `run_19`（七方） | 舊 §9 |
 | **[Part D](#part-d--跨底模對照qwen3-4b-run_9八方)** | 跨底模對照 | Qwen3-4B `run_9`（八方） | 舊 §10 |
+| **[Part E](#part-e--多候選結構run_20id8-multi-structcand)** | 多候選結構 | `run_20`（id=8, multistruct，無姊妹密碼） | 新增 |
 
 **四部分共同前提：** 兩側測試集皆為 COMB 的同一組 5,000 筆帳號密碼（一致性驗證見 [A.3](#a3-測試集筆數說明)）；PassLLM 未特別註明時一律指 `run_01`（舊 Prompt）基準；crack rate 一律以「命中筆數 / 5,000」計算，@K 表示前 K 個候選內命中。
 
@@ -388,3 +389,72 @@ As a targeted password guessing model, your task is to generate likely password 
 **觀察：** 走勢與 run_19 幾乎完全一致（「含 pos_semantic」同樣隨 @K 上升而上升，41.29% → 48.71%；「不含 pos_semantic」對應下降，58.71% → 51.29%），且每個 @K 的比例都只比 run_19 低約 0.6–1.7 個百分點（@1000：48.71% vs 49.33%），差距幅度與 [D.3](#d3-crack-rate-對照) crack rate 的差距（同樣約 0.5pp 上下）相近。這進一步支持 [C.6](#c6-run_19-各-k-已破解密碼的-pos_semantic-標籤比例) 的推論：run_9 目前落後 run_19 的部分，看起來是整體幅度上的小幅落後（可能來自訓練未完成），而非「哪種類型的密碼特別弱」的結構性差異——兩個底模在「語意線索密碼需要更大候選集合才容易命中」這個現象上的表現是一致的。
 
 > **Part D 小結：** 換成 Qwen3-4B（參數量約一半）後，各 @K 僅比 run_19 低 0.3–0.9pp，且 tag type 組成與語意比例走勢幾乎重疊，顯示 Part C 的結論來自「tag 結構 + 姊妹密碼」這個方法本身，而非特定底模。惟 run_9 用的是訓練中途權重，最終數字待補。
+
+---
+---
+
+# Part E — 多候選結構：`run_20`（id=8, multi-structcand）
+
+> `run_20`（[id8_run20 報告](id8_run20_Mistral-7B_id8_multistruct.md)）是本研究第一個使用 **prompt template id=8（multi-structcand）** 的訓練。id=8 沿用 id=5 的 system prompt，但 JSON payload 除主結構（`Tags`，backoff 標記）外，另附上同一組密碼的 **candidate structures**（其他 tag-type 如 pos / pos_semantic 的 `<tag>` 結構列表，來源 `CandTags` 欄位）。與 Part C/D 不同，**run_20 不使用姊妹密碼**，走的是「同一密碼提供多種 tag 結構視角」這條路線。本節列出 run_20 的最高 crack rate（dynamic 搜尋）並與 Part B 的 tag-only 基準對照。底模為 Mistral-7B-v0.1，LoRA 設定同 run_19（r16/α32/dropout0.2/qkv-only、lr 2e-4）。
+
+> **⚠️ 重要限制：** run_20 訓練**未跑完**（SLURM job 321018 於 2026-08-31 10:52 手動取消，約在 step ≈7,100 / 10,250）。以下用的是 `load_best_model_at_end` 自動選出的最佳點 `lora_final_4100`（step 4,100，eval_loss 1.6027 @ epoch 4.0）；因最佳點出現在第 4 epoch、之後曲線走平並輕微過擬合，此權重與跑滿 10 epoch 應選回的最佳點差異很小。
+
+## E.1 訓練參數對照（含 Prompt 差異）
+
+在 [D.1](#d1-訓練參數對照) 的八方表格基礎上加入 run_20 一欄，並**移除 run_10、run_13**（此二者在 [B.2](#b2-實驗二本研究五次訓練彙整六方比較) 已充分討論、且與 run_15/17/18 同屬 tag-only 家族，本節不再重複納入比較）。表格新增「Prompt 內容差異」一列，明確標出各 run prompt payload 的實際內容：
+
+| 項目 | PassLLM | run_15 | run_17 | run_18 | run_19 | run_9 | run_20 |
+|---|---|---|---|---|---|---|---|
+| 底模 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | Mistral-7B-v0.1 | **Qwen3-4B** | Mistral-7B-v0.1 |
+| 資料集 | COMB | COMB | COMB | COMB | COMB（+`Siblings`） | COMB（+`Siblings`） | COMB（`multistruct`） |
+| prompt_template_id | 0 | 5 | 5 | 5 | 7 | 7 | **8** |
+| **Prompt 內容差異** | 帳號舊密碼 `{"Old password": [...]}` | inline `<tag>` 結構（JSON 包裝，無姊妹密碼） | inline `<tag>` 結構（同 id5） | inline `<tag>` 結構（同 id5） | id5 結構 + `sibling passwords`（同帳號舊密碼） | id5 結構 + `sibling passwords`（同 run_19） | id5 結構 + **`candidate structures`**（同密碼多 tag-type 結構，**無姊妹密碼**） |
+| LoRA r / alpha | 16 / 32 | 32 / 64 | 32 / 64 | 32 / 64 | 16 / 32 | 16 / 32 | 16 / 32 |
+| target_modules | q,k,v_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v,o_proj,gate_proj | q,k,v_proj | q,k,v_proj | q,k,v_proj |
+| lora_dropout | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 | 0.2 |
+| per_device_train_batch_size | 4 | 64 | 4 | 4 | 4 | 4 | 4 |
+| gradient_accumulation_steps | 64 | 64 | 64 | 64 | 64 | 64 | 64 |
+| 有效 batch size | 256 | 4,096 | 256 | 256 | 256 | 256 | 256 |
+| learning_rate | 5e-4 | 5e-4 | 5e-4 | 2e-4 | 2e-4 | 2e-4 | 2e-4 |
+| num_train_epochs（計畫） | 3 | 10 | 10 | 10 | 10 | 10 | 10 |
+| 最終／最佳 eval_loss | 未提供 | 2.327（↑，已發散） | 1.662（step 3620，發散前最佳點） | 1.601（step 2900，目前最佳點） | 1.260（step 5100，最佳點） | 1.283（step 6140，評估用權重，非最佳點） | 1.603（step 4100，最佳點） |
+| 訓練狀態 | 完成 | 完成但已發散 | 於 step ~3966 被取消，發散 | **訓練中**（~4385/10,250） | 完成（跑滿 10,250 步） | **訓練中**（~8780/10,250） | **訓練中被取消**（~7,100/10,250，約 69%） |
+| 評估用 checkpoint | `mistral_7b_COMB/final` | `run_15/lora_final`（發散後） | `run_17/lora_final`（=ckpt-3620，手動截斷） | `run_18/lora_final_2900`（=ckpt-2900，手動截斷） | `run_19/lora_final`（=ckpt-5100，自動選點） | `run_9/lora_final_6140`（=ckpt-6140，中途另存，非最佳點） | `run_20/lora_final_4100`（=ckpt-4100，`load_best_model_at_end` 自動選點） |
+
+> run_20 與 run_19/run_9 共用相同的 LoRA 設定（r16/α32/dropout0.2/qkv-only、lr 2e-4、有效 batch 256），三者唯一差別在 **prompt 線索**：run_19/run_9 提供姊妹密碼，run_20 改提供同一密碼的多 tag-type 候選結構（`candidate structures`），皆**不使用**姊妹密碼。因此 run_20 vs run_19 是「多候選結構 vs 姊妹密碼」在相同 LoRA/底模下的乾淨對照。run_20 評估採最高的 dynamic 搜尋（constrained 因 3,227/5,000 筆帶語意 tag 觸發 fallback→dynamic，@1000 = 18.34%，與 dynamic 僅差 1 筆）。
+
+## E.2 Crack Rate 對照
+
+同樣移除 run_10、run_13，在其餘各 run 上加入 run_20（dynamic，最高）：
+
+| @K | PassLLM | run_15 | run_17 | run_18 | **run_20（id8）** | run_19（id7） | run_9（Qwen） |
+|---|---|---|---|---|---|---|---|
+| @1 | 0（0.00%） | 137（2.74%） | 166（3.32%） | 183（3.66%） | **189（3.78%）** | 682（13.64%） | 666（13.32%） |
+| @10 | 425（8.50%） | 294（5.88%） | 325（6.50%） | 370（7.40%） | **389（7.78%）** | 1,218（24.36%） | 1,197（23.94%） |
+| @50 | 765（15.30%） | 441（8.82%） | 485（9.70%） | 547（10.94%） | **556（11.12%）** | 1,459（29.18%） | 1,427（28.54%） |
+| @100 | 914（18.28%） | 516（10.32%） | 570（11.40%） | 629（12.58%） | **649（12.98%）** | 1,552（31.04%） | 1,507（30.14%） |
+| @500 | 1,020（20.40%） | 674（13.48%） | 766（15.32%） | 819（16.38%） | **835（16.70%）** | 1,735（34.70%） | 1,703（34.06%） |
+| @1000 | 1,054（21.08%） | 740（14.80%） | 854（17.08%） | 906（18.12%） | **918（18.36%）** | 1,802（36.04%） | 1,778（35.56%） |
+
+> 分母皆為 5,000 筆；run_20 在 tag-only 家族（run_15/17/18）中各 @K 皆最高，但與含姊妹密碼的 run_19/run_9 仍有約 18pp 的差距。
+
+## E.3 結果圖表
+
+**七方 crack rate 對照（PassLLM + run_15/17/18/20/19/9，未含 run_10/run_13）：**
+
+![PassLLM vs run_15/17/18/20/19/9 Comparison](../../gen/results/comparison_PassLLM_vs_run15-17-18-20-19-9_COMB_result.png)
+
+
+## E.4 Tag Type 占比（@1000, dynamic）
+
+| Run | Cracked (@1000) | backoff only | pos / pos_semantic |
+|---|---|---|---|
+| run_18（id5, tag-only） | 906 | 53（5.8%） | 853（94.2%） |
+| **run_20（id8, multistruct）** | 918 | 49（5.3%） | 869（94.7%） |
+| run_19（id7, +siblings） | 1,802 | 452（25.1%） | 1,350（74.9%） |
+
+**觀察：**
+
+- **multistruct（多 tag-type 候選結構）相對純 tag 結構（run_18）僅微幅提升：** @1000 由 18.12% → 18.36%（+0.24pp），各 K 差距皆在 ±0.5pp 內，且 tag type 組成仍高度集中在 pos/pos_semantic（94.7%，與 run_18 的 94.2% 相近）。顯示「提供同一密碼的多種 tag-type 結構」帶來的增益有限，破解仍主要靠語意（pos_semantic）線索，純結構（backoff only）子集依舊是最弱的一環。
+- **與姊妹密碼路線（run_19）差距懸殊：** run_20（18.36%）遠低於 run_19（36.04%），再次印證 [Part C](#part-c--總合比較加入-sibling-passwords-的-run_19七方) 的結論——真正拉開差距的是姊妹密碼線索，而非 tag 結構本身的表示方式（無論是單一 backoff、inline `<tag>`、或多候選結構）。
+
