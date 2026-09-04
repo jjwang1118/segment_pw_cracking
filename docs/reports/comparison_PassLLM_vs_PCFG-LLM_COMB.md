@@ -15,6 +15,7 @@
 | **[Part C](#part-c--總合比較加入-sibling-passwords-的-run_19七方)** | 總合比較 | 加入 `sibling passwords` 的 `run_19`（七方） | 舊 §9 |
 | **[Part D](#part-d--跨底模對照qwen3-4b-run_9八方)** | 跨底模對照 | Qwen3-4B `run_9`（八方） | 舊 §10 |
 | **[Part E](#part-e--多候選結構run_20id8-multi-structcand)** | 多候選結構 | `run_20`（id=8, multistruct，無姊妹密碼） | 新增 |
+| **[Part F](#part-f--passllm-pii-消融只用帳號資訊的-run_03)** | PassLLM PII 消融 | PassLLM `run_03`（只用帳號資訊、無舊密碼） | 新增 |
 
 **四部分共同前提：** 兩側測試集皆為 COMB 的同一組 5,000 筆帳號密碼（一致性驗證見 [A.3](#a3-測試集筆數說明)）；PassLLM 未特別註明時一律指 `run_01`（舊 Prompt）基準；crack rate 一律以「命中筆數 / 5,000」計算，@K 表示前 K 個候選內命中。
 
@@ -457,4 +458,101 @@ As a targeted password guessing model, your task is to generate likely password 
 
 - **multistruct（多 tag-type 候選結構）相對純 tag 結構（run_18）僅微幅提升：** @1000 由 18.12% → 18.36%（+0.24pp），各 K 差距皆在 ±0.5pp 內，且 tag type 組成仍高度集中在 pos/pos_semantic（94.7%，與 run_18 的 94.2% 相近）。顯示「提供同一密碼的多種 tag-type 結構」帶來的增益有限，破解仍主要靠語意（pos_semantic）線索，純結構（backoff only）子集依舊是最弱的一環。
 - **與姊妹密碼路線（run_19）差距懸殊：** run_20（18.36%）遠低於 run_19（36.04%），再次印證 [Part C](#part-c--總合比較加入-sibling-passwords-的-run_19七方) 的結論——真正拉開差距的是姊妹密碼線索，而非 tag 結構本身的表示方式（無論是單一 backoff、inline `<tag>`、或多候選結構）。
+
+---
+---
+
+# Part F — PassLLM PII 消融：只用帳號資訊的 `run_03`
+
+> [A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析) 已從「評估結果」的角度指出 PassLLM `run_01` 猜中的密碼 99%+ 建立在姊妹密碼（`"Old password"`）線索上。`run_03` 則從「訓練＋評估」兩端同時抽掉舊密碼，改成只提供**帳號資訊（account information，即使用者帳號名／username）**這一種 PII——**訓練資料與測試資料皆換成 account-only 版本**（`data/COMB/train_addacc_only.json` / `test_addacc_only.json`），prompt 只把帳號字串接在指令後、不含任何舊密碼或 tag 結構。本部分即這組 PassLLM 內部消融的結果：當 targeted 模型手上只剩「帳號名」這一條 PII 時，還能猜中多少。此節純屬 **PassLLM 側**的實驗（底模 Mistral-7B-v0.1），與本研究 PCFG-LLM 的方法無關。
+
+## F.1 訓練／評估參數對照
+
+在 [A.1](#a1-訓練參數對照)／[A.2](#a2-評估參數對照) 的 PassLLM 設定基礎上，列出 `run_03`（PII only）與既有 `run_01`（舊密碼基準）的差異；兩者 LoRA／超參數完全相同，**唯一差別在提供給模型的 PII 種類**（舊密碼 → 帳號名）：
+
+| 項目 | PassLLM `run_01`（舊密碼） | PassLLM `run_03`（PII，只用帳號） |
+|---|---|---|
+| 底模 | Mistral-7B-v0.1 | Mistral-7B-v0.1 |
+| 訓練資料 | `data/COMB/TRAIN.json`（含 `Old password`） | `data/COMB/train_addacc_only.json`（含帳號名、**無舊密碼**） |
+| 測試資料 | `data/COMB/TEST.json` | `data/COMB/test_addacc_only.json` |
+| PII 內容 | 同帳號歷史舊密碼（sibling passwords） | 帳號名／username（account information） |
+| prompt_template_id | 0 | 0 |
+| LoRA r / alpha | 16 / 32 | 16 / 32 |
+| target_modules | q,k,v_proj | q,k,v_proj |
+| lora_dropout | 0.2 | 0.2 |
+| per_device_train_batch_size | 4 | 4 |
+| gradient_accumulation_steps | 64 | 64 |
+| 有效 batch size | 256 | 256 |
+| learning_rate | 5e-4 | 5e-4 |
+| num_train_epochs | 3 | 3 |
+| optim | adamw_torch | adamw_torch |
+| 評估搜尋法 | `dynamic_beam_search` | `dynamic_beam_search` |
+| beam_width | `[95, 1000] × 15` | `[95, 1000] × 15` |
+| batch_size | 100 | 100 |
+| eos_threshold | 0.001 | 0.001 |
+| max_guess_number | 1,000 | 1,000 |
+| 測試筆數 | 5,000 | 5,000 |
+| checkpoint | `checkpoints/mistral_7b_COMB/final` | `checkpoints/mistral_7b_COMB_pii_only/final` |
+
+> `run_03` 的測試集與其餘各 Part 為**同一組** 5,000 筆帳號密碼（例：`index=2` 的真實密碼為 `shark71542`，與 [C.2](#c2-完整-prompt-對照同一帳號實例) run_19 的 `index=2` 一致），僅把可見的 PII 欄位換成帳號名，因此 crack rate 可與其他 Part 直接對照。
+
+## F.2 Prompt 對照（同一帳號實例）
+
+以 `index=2`（帳號 `jrbuff1994`，姊妹密碼 `buffalo12`，真實密碼 `shark71542`）為例：
+
+**PassLLM `run_01`（舊密碼，`gen/passllm/run_01/input_output.jsonl`）：**
+
+```
+<s>As a targeted password guessing model, your task is to utilize the provided account information to guess the password.{"Old password": ["buffalo12"]}
+```
+
+**PassLLM `run_03`（PII／只用帳號，`gen/passllm/run_03/result/COMB/pii_only/input_output.jsonl`）：**
+
+```
+<s>As a targeted password guessing model, your task is to utilize the provided account information to guess the password.jrbuff1994
+```
+
+> `run_03` 把 prompt 中的舊密碼 JSON 整段換成帳號字串 `jrbuff1994`（無 JSON 包裝）。從候選輸出可見模型主要圍繞帳號名變形猜測（如 `jrbuff1994`、`buff1994`、`jrbuff94`）並穿插通用密碼（`password`、`123456789`），此例 @1000 內未命中 `shark71542`。
+
+## F.3 Crack Rate 對照
+
+將 `run_03` 與兩個既有的 PassLLM 基準並列（`run_01` 舊密碼 JSON、`run_02` 姊妹密碼 `</s>` 串接，數字分別取自 [A.4](#a4-crack-rate-對照)、[B.1.1](#b111-crack-rate-四方對照)）：
+
+| @K | PassLLM `run_01`（舊密碼） | PassLLM `run_02`（姊妹密碼新格式） | PassLLM `run_03`（PII，只用帳號） |
+|---|---|---|---|
+| @1 | 0 / 5,000（0.00%） | 0 / 5,000（0.00%） | 84 / 5,000（**1.68%**） |
+| @10 | 425 / 5,000（8.50%） | 110 / 5,000（2.20%） | 221 / 5,000（4.42%） |
+| @50 | 765 / 5,000（15.30%） | 296 / 5,000（5.92%） | 288 / 5,000（5.76%） |
+| @100 | 914 / 5,000（18.28%） | 414 / 5,000（8.28%） | 320 / 5,000（6.40%） |
+| @500 | 1,020 / 5,000（20.40%） | 592 / 5,000（11.84%） | 419 / 5,000（8.38%） |
+| @1000 | 1,054 / 5,000（21.08%） | 650 / 5,000（13.00%） | 459 / 5,000（**9.18%**） |
+
+## F.4 與過往結果的對照
+
+把 `run_03`（帳號名 PII）放進本報告各 Part 已有的結果一起看（同一組 5,000 筆測試集），取每一路線的代表 run 對照 @1 / @100 / @1000：
+
+| 線索類型 | 代表 run | @1 | @100 | @1000 |
+|---|---|---|---|---|
+| PassLLM — 舊密碼（JSON） | run_01（[A.4](#a4-crack-rate-對照)） | 0.00% | 18.28% | 21.08% |
+| PassLLM — 姊妹密碼（新格式） | run_02（[B.1.1](#b111-crack-rate-四方對照)） | 0.00% | 8.28% | 13.00% |
+| **PassLLM — 帳號名 PII** | **run_03（本節）** | **1.68%** | **6.40%** | **9.18%** |
+| 本研究 — 純 tag 結構（基準） | run_10（[B.2.2](#b22-crack-rate-對照)） | 3.10% | 11.56% | 17.02% |
+| 本研究 — 純 tag 結構（最佳） | run_18（[B.2.2](#b22-crack-rate-對照)） | 3.66% | 12.58% | 18.12% |
+| 本研究 — 多候選結構 | run_20（[E.2](#e2-crack-rate-對照)） | 3.78% | 12.98% | 18.36% |
+| 本研究 — tag 結構＋姊妹密碼 | run_19（[C.3](#c3-crack-rate-對照)） | 13.64% | 31.04% | 36.04% |
+
+**觀察（相對過往結果）：**
+
+- **相對 PassLLM 自身基準：抽掉舊密碼、只留帳號名後大幅下滑。** @1000 由 `run_01` 的 21.08% 降到 9.18%（−11.90pp，僅約基準的 43%）；三個 PassLLM 版本 @1000 排序為 `run_01`（舊密碼，21.08%）> `run_02`（姊妹密碼新格式，13.00%）> `run_03`（帳號名，9.18%）。這從「訓練＋評估兩端都拿掉舊密碼」的角度，正面印證 [A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析) 的結論——PassLLM 的高破解率絕大部分建立在同帳號舊密碼線索上。
+- **相對本研究純 tag 結構：帳號名 PII 比「只有結構」還弱。** run_03 @1000（9.18%）低於本研究所有純 tag 結構的 run（run_10 17.02%、run_18 18.12%、run_20 18.36%），@100 亦然（6.40% vs 11.56%～12.98%）。顯示對 targeted 猜測而言，一段「密碼長什麼結構」的線索所帶來的資訊量，反而高於單純一個帳號名。
+- **@1 例外：帳號名在首猜段落優於兩個 PassLLM 舊密碼版本。** run_03 @1 為 1.68%，高於 `run_01`／`run_02` 的 0.00%（帳號名或其變形常被直接當密碼，首猜即可命中 84 筆），但仍低於本研究任一 run（run_10 3.10% 起、run_19 高達 13.64%）。
+- **相對「結構＋姊妹密碼」的完整方法：差距最大。** run_03（9.18%）與 run_19（36.04%）相差 26.86pp，再次凸顯——真正決定 targeted 破解上限的是「舊密碼／姊妹密碼」這類同帳號歷史線索，其次才是密碼結構線索，帳號名本身能提供的資訊最為有限。
+
+## F.5 結果圖表
+
+下圖把 [F.4](#f4-與過往結果的對照) 表格的七條線畫在同一張圖上（x 軸為 @K，對數刻度），`run_03`（帳號名 PII）以**黑色粗實線**標示：其曲線位於所有本研究 tag 結構線（藍／綠／紫）之下，僅在 @1 高於兩個 PassLLM 舊密碼版本（紅色系）。
+
+![PassLLM run_03 (account-only PII) vs 過往結果](../../gen/results/comparison_PassLLM_run03_pii_only_vs_past_COMB_result.png)
+
+> **Part F 小結：** 把 PassLLM 的 PII 從「舊密碼」換成「只有帳號名」，@1000 由 21.08% 掉到 9.18%，不僅低於 PassLLM 舊密碼基準，也低於本研究所有純 tag 結構的 run；帳號名僅在 @1 段落（1.68%）勝過 PassLLM 的舊密碼版本（0.00%）。整體而言，帳號名是本報告所有線索類型中最弱的一種。
 
