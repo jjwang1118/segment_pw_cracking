@@ -67,7 +67,8 @@ def encode_limit(input_str,vocab):
         "attention_mask": [1 for i in range(len(ret))]
     }
 
-def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, template_id=1):
+def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, template_id=1,
+                           knowledge_format="json", passllm_opts=None):
     """Batched preprocessing: batch is a dict of lists (batched=True in dataset.map).
     prompt_ids must be pre-computed once outside the map call.
     template_id=1: token+tag pairs (training format A)
@@ -79,6 +80,7 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     tags_col     = batch.get("Tags", [])
     siblings_col = batch.get("Siblings", [None] * len(passwords))
     candtags_col = batch.get("CandTags", [None] * len(passwords))
+    account_col  = batch.get("Account", [None] * len(passwords))
 
     prompt_len = len(prompt_ids)
 
@@ -86,7 +88,7 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
     all_attention_mask = []
     all_labels         = []
 
-    for password, tokens, tags, siblings, candtags in zip(passwords, tokens_col, tags_col, siblings_col, candtags_col):
+    for password, tokens, tags, siblings, candtags, account in zip(passwords, tokens_col, tags_col, siblings_col, candtags_col, account_col):
         password   = str(password) if password is not None else ""
         token_list = tokens.split("|") if tokens else []
         tag_list   = tags.split("|")   if tags   else []
@@ -162,6 +164,15 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
                 "password structure": structure,
                 "candidate structures": candidate_structures
             }, ensure_ascii=False)
+        elif template_id == 9:
+            # account + sibling passwords. Serialization style chosen by knowledge_format
+            # ("json" = single JSON object; "passllm" = paper concatenation). Siblings is a
+            # json.dumps'd list (run_pcfg_combine_acc_sibling.py); Account is a raw string.
+            from src.prompt_template import build_account_sibling_knowledge
+            siblings_list = json.loads(siblings) if siblings else []
+            knowledge_text = build_account_sibling_knowledge(
+                tag_list, account or "", siblings_list, knowledge_format, passllm_opts
+            )
         else:
             knowledge_text = json.dumps({
                 "This password can be segmented and tag into the following part": list(zip(token_list, tag_list)),

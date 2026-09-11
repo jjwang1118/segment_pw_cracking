@@ -169,10 +169,17 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     else:
         run_dir = None  # 新 run，等 base_dir 確定後再建立
 
-    from src.prompt_template import _get_indice
+    from src.prompt_template import _get_indice, account_sibling_system_prompt
     from util.pw_tokenize import process_train_targeted, get_alpa
 
-    prompt_template  = _get_indice(config["train"]["prompt_template_id"])
+    template_id      = config["train"]["prompt_template_id"]
+    knowledge_format = config["train"].get("knowledge_format", "json")
+    passllm_opts     = config["train"].get("passllm_opts")
+    # id=9 (account+sibling) picks its instruction by knowledge_format; all others use _get_indice.
+    if template_id == 9:
+        prompt_template = account_sibling_system_prompt(knowledge_format)
+    else:
+        prompt_template = _get_indice(template_id)
     datasets         = load_datasets(config)
     model, tokenizer = build_model_and_tokenizer(config)
     vocab            = get_alpa(tokenizer)
@@ -182,7 +189,6 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     if tokenizer.bos_token_id is not None:
         prompt_ids = [tokenizer.bos_token_id] + prompt_ids
 
-    template_id = config["train"].get("prompt_template_id", 1)
     preprocess_fn = partial(
         process_train_targeted,
         prompt_ids=prompt_ids,
@@ -190,6 +196,8 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
         tokenizer=tokenizer,
         max_length=512,
         template_id=template_id,
+        knowledge_format=knowledge_format,
+        passllm_opts=passllm_opts,
     )
 
     train_dataset = datasets["train"].map(

@@ -75,7 +75,86 @@ def _get_indice(id):
             "prior passwords from the same account. Do not output the tag placeholders. "
             "Generate only the password characters for each segment in order."
         )
+    # id=9: id=7's password structure + sibling passwords + the account (username).
+    # Only used by the "json" knowledge_format; the "passllm" knowledge_format reuses
+    # id=0's instruction (see account_sibling_system_prompt()).
+    if id == 9:
+        return (
+            "As a targeted password guessing model, your task is to generate likely password "
+            "candidates that match the given password information. The password structure is "
+            "represented as a sequence of <tag> placeholders. 'account' is the account username "
+            "and 'sibling passwords', if any, are prior passwords from the same account. "
+            "Do not output the tag placeholders. "
+            "Generate only the password characters for each segment in order."
+        )
     raise ValueError(f"Unknown prompt id: {id}")
+
+
+# ── id=9 account+sibling knowledge: two interchangeable serialization styles ──────
+# Selected by the `knowledge_format` config key (train_config.yaml / search.yaml):
+#   "json"    — 目前這種方式: one JSON object {password structure, account, sibling passwords},
+#               appended directly after the instruction (no newline), same style as id=5/7/8.
+#   "passllm" — 論文串接格式 (PassLLM prompt_template_id=0): instruction + "\n" + [aux info:
+#               account + old passwords directly concatenated, NO delimiter between pieces].
+#               The target follows directly; the ONLY EOS in the sequence is the final one that
+#               util/pw_tokenize appends after the target — no </s> is inserted anywhere else.
+# The account + sibling data is identical across both; only the presentation differs, so the two
+# are an apples-to-apples comparison. The target is always encoded with our 95-char vocab
+# downstream (util/pw_tokenize.encode_limit) regardless of knowledge_format.
+
+DEFAULT_PASSLLM_OPTS = {
+    "include_structure": False,  # paper-faithful PassLLM carries no <tag> structure
+    "separator": "",             # paper: aux pieces are directly concatenated (no delimiter)
+    "account_first": True,       # account before sibling passwords in the concatenation
+}
+
+
+def _resolve_passllm_opts(passllm_opts: dict | None) -> dict:
+    opts = dict(DEFAULT_PASSLLM_OPTS)
+    if passllm_opts:
+        opts.update(passllm_opts)
+    return opts
+
+
+def account_sibling_system_prompt(knowledge_format: str = "json") -> str:
+    """System prompt for the account+sibling template, per knowledge_format."""
+    return _get_indice(0) if knowledge_format == "passllm" else _get_indice(9)
+
+
+def build_account_sibling_knowledge(
+    tags: list,
+    account: str,
+    siblings: list,
+    knowledge_format: str = "json",
+    passllm_opts: dict | None = None,
+) -> str:
+    """Serialize the account+sibling knowledge block (the text that follows the instruction).
+
+    "json":    returns a JSON object appended directly (no leading newline), matching id=7.
+    "passllm": returns "\\n" + the aux pieces joined by `separator` (default "" = directly
+               concatenated, per the paper). No trailing separator is added; the target that
+               follows and the single final EOS are appended downstream by util/pw_tokenize.
+    """
+    structure = ''.join(f"<{tag}>" for tag in tags)
+    account = account or ""
+    siblings = list(siblings) if siblings else []
+
+    if knowledge_format == "passllm":
+        opts = _resolve_passllm_opts(passllm_opts)
+        items = []
+        if opts["include_structure"] and structure:
+            items.append(structure)
+        acc = [account] if account else []
+        items += (acc + siblings) if opts["account_first"] else (siblings + acc)
+        aux = opts["separator"].join(items)
+        return "\n" + aux
+
+    # default: "json"
+    return json.dumps({
+        "password structure": structure,
+        "account": account,
+        "sibling passwords": siblings,
+    }, ensure_ascii=False)
 
 
 def prompt_convert(data: dict,template:str):
@@ -250,6 +329,28 @@ def prompt_convert_sibling_tag(data: dict, template: str) -> str:
         "password structure": structure,
         "sibling passwords": siblings
     }, ensure_ascii=False)
+    return template + knowledge
+
+
+def prompt_convert_account_sibling(
+    data: dict,
+    template: str,
+    knowledge_format: str = "json",
+    passllm_opts: dict | None = None,
+) -> str:
+    """Template (id=9): password structure + account + sibling passwords.
+
+    `data['Siblings']` is a json.dumps'd list (run_pcfg_combine_acc_sibling.py) decoded here;
+    `data['Account']` is the raw account-name string. Serialization style is chosen by
+    knowledge_format ("json" = our single-JSON form, "passllm" = paper concatenation form).
+    """
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    siblings_raw = data.get('Siblings')
+    siblings = json.loads(siblings_raw) if siblings_raw else []
+    account = data.get('Account') or ""
+    knowledge = build_account_sibling_knowledge(
+        tags, account, siblings, knowledge_format, passllm_opts
+    )
     return template + knowledge
 
 

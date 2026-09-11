@@ -76,7 +76,8 @@ def _load_model(model_path: str, precision: str):
     return model, tokenizer, device
 
 
-def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
+def _build_prompt(entry: dict, template_id: int, system_prompt: str,
+                  knowledge_format: str = "json", passllm_opts: dict = None) -> str:
     """Build the full prompt string for one test entry (no real password included)."""
     if template_id == 1:
         from src.prompt_template import prompt_convert_token_tag
@@ -108,6 +109,13 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str) -> str:
         from src.prompt_template import prompt_convert_multi_structure
         return prompt_convert_multi_structure(
             {"Tags": entry.get("Tags"), "CandTags": entry.get("CandTags")}, system_prompt
+        )
+    if template_id == 9:
+        from src.prompt_template import prompt_convert_account_sibling
+        return prompt_convert_account_sibling(
+            {"Tags": entry.get("Tags"), "Siblings": entry.get("Siblings"),
+             "Account": entry.get("Account")},
+            system_prompt, knowledge_format, passllm_opts,
         )
     raise ValueError(f"Unknown template_id: {template_id}")
 
@@ -156,7 +164,13 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     _EXCLUDE = {tokenizer.eos_token, "\t", "<", "|", ">"}
     constrained_vocab_dict = {c: tid for c, tid in vocab_dict.items() if c not in _EXCLUDE}
 
-    system_prompt = _get_indice(template_id)
+    knowledge_format = search_cfg.get("knowledge_format", "json")
+    passllm_opts     = search_cfg.get("passllm_opts")
+    if template_id == 9:
+        from src.prompt_template import account_sibling_system_prompt
+        system_prompt = account_sibling_system_prompt(knowledge_format)
+    else:
+        system_prompt = _get_indice(template_id)
 
     # Params shared by contrastive / dynamic beam search
     beam_width_list  = list(search_cfg["beam_width"]) if isinstance(search_cfg.get("beam_width"), list) \
@@ -206,7 +220,8 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     with open(output_file, "w", encoding="utf-8") as out_f:
         for i, entry in enumerate(entries):
             real_pw     = str(entry.get("Password", ""))
-            full_prompt = _build_prompt(entry, template_id, system_prompt)
+            full_prompt = _build_prompt(entry, template_id, system_prompt,
+                                        knowledge_format, passllm_opts)
 
             input_ids = tokenizer(
                 full_prompt, return_tensors="pt", add_special_tokens=True
