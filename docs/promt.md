@@ -258,3 +258,37 @@ As a targeted password guessing model, your task is to generate likely password 
 > **id=8 vs id=5**：system prompt 完全相同，唯一差別是 JSON 多帶 `candidate structures`——構成乾淨 ablation（唯一變數＝「有沒有多餵候選結構」）。
 > **id=8 vs id=7**：骨架相同（id=5 結構 + JSON list），差別只在 list 語意——id=7 是同帳號 sibling 密碼、id=8 是同一密碼的其他 tag-type 候選結構。
 > **資料依賴**：目前 pipeline 每個 tagtype 各自獨立產 JSONL，三者未對齊；id=8 需另寫合併步驟（仿 `run_pcfg_combine_sibling.py`）把三種結構依密碼對齊打包。
+
+---
+
+#### id=9 `prompt_convert_account_sibling`（account + sibling）
+
+在 id=7（結構 + sibling）基礎上再加入 **account（帳號名）**。資料來自 `combine_acc_sibling/sibling_account/` 變體（含 `Account` + `Siblings` 欄）。knowledge 的拼接方式由獨立設定檔 **`config/knowledge_format.yaml`** 控制（只在 id=9 生效），有兩種：
+
+**`knowledge_format: json`（目前這種方式）** — instruction 後直接接單一 JSON object：
+
+```
+[User]
+As a targeted password guessing model, your task is to generate likely password candidates that match the given password information. The password structure is represented as a sequence of <tag> placeholders. 'account' is the account username and 'sibling passwords', if any, are prior passwords from the same account. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<number8><char1>", "account": "v_bolshova", "sibling passwords": ["25031984vb", "5031984vb"]}
+
+[Assistant]
+2 5 0 3 1 9 8 4 v
+```
+
+**`knowledge_format: passllm`（論文串接格式，`prompt_convert` 重用 id=0 instruction）** — instruction + `\n` + account/舊密碼**直接黏接（無分隔符）**，整條序列只有最末端 1 個 EOS：
+
+```
+[User]
+As a targeted password guessing model, your task is to utilize the provided account information to guess the password.
+v_bolshova25031984vb5031984vb
+
+[Assistant]
+2 5 0 3 1 9 8 4 v
+```
+
+`passllm_opts`（只在 passllm 模式生效）：`include_structure`（預設 `false`＝無 `<tag>` 結構；`true`＝把結構黏在 account 前）、`separator`（預設 `""`＝直接黏接）、`account_first`（account 在 siblings 前）。
+
+> **兩種模式資料完全相同、只差呈現**，為 apples-to-apples 對照；target 一律用 95-char 逐字元編碼，loss 只壓 target+EOS。
+> **結構資訊**：json 模式恆有（`password structure` key）；passllm 模式預設**無**結構，需 `include_structure: true` 才保留。
+> **評估**：passllm 無結構 → 用 `dynamic_beam_search` / `contrastive_search`，勿用 `constrained_beam_search`。
+> **id=9 vs id=7**：id=9 多一個 `account` 欄，且可切換 json / passllm 兩種拼接格式。

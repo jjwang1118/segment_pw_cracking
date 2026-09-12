@@ -1,0 +1,21 @@
+# ============================================================================
+# knowledge_format.yaml — prompt id=9 (account + sibling) 的 knowledge 拼接控制
+# ============================================================================
+# 這份設定同時作用於「訓練」(util/train.py) 與「評估」(run_eval.py)，集中管理，
+# 不再散落在 train_config.yaml / search.yaml。只在 prompt_template_id=9 時生效。
+#
+# knowledge_format:
+#   json    = 目前這種方式：instruction 後直接接一個 JSON object
+#             {"password structure": "<tag>...", "account": "...", "sibling passwords": [...]}
+#   passllm = 論文串接格式：instruction + "\n" + [account + 舊密碼直接黏接]，
+#             輔助資訊之間無分隔符，整條序列只有最末端 1 個 EOS（target 後那個）。
+#
+# 兩種模式資料完全相同、只差呈現；target 一律用 95-char 逐字元編碼，loss 只壓 target+EOS。
+# ----------------------------------------------------------------------------
+
+knowledge_format: passllm        # json | passllm
+
+passllm_opts:                 # 只在 knowledge_format=passllm 時生效
+  include_structure: true    # 是否保留 <tag> 結構（false=純 PassLLM 無結構；true=串接格式但保留結構）
+  separator: ""               # account/舊密碼之間的分隔符（論文=""，直接黏接）
+  account_first: true         # account 放在 sibling passwords 之前

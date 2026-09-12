@@ -6,12 +6,6 @@ contrastive_search:
   #[ 95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000 ]
   batch_size: 500
   prompt_template_id: 5
-  # id=9 (account+sibling) 專用：json=目前 JSON 格式 | passllm=論文直接串接格式
-  knowledge_format: json
-  passllm_opts:
-    include_structure: false
-    separator: ""
-    account_first: true
   vocab_limit: true
   precistion: half
   eos_threshold: 0.0001
@@ -25,13 +19,8 @@ dynamic_beam_search:
   #[ 95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000 ]
   batch_size: 1000
   prompt_template_id: 8
-  # id=9 (account+sibling) 專用：json=目前 JSON 格式 | passllm=論文直接串接格式
-  # passllm 模式無 <tag> 結構，請用本搜尋法（非 constrained_beam_search）
-  knowledge_format: json
-  passllm_opts:
-    include_structure: false
-    separator: ""
-    account_first: true
+  # id=9 (account+sibling) 的 knowledge 拼接方式改由 config/knowledge_format.yaml 控制
+  # (passllm 模式無 <tag> 結構，id=9 請用本搜尋法，非 constrained_beam_search)
   vocab_limit: true
   precistion: half
   eos_threshold: 0.001

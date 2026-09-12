@@ -21,6 +21,20 @@ def load_config(config_path: Path = PROJECT_ROOT / "config" / "train_config.yaml
         return yaml.safe_load(f)
 
 
+def load_knowledge_format_config(
+    config_path: Path = PROJECT_ROOT / "config" / "knowledge_format.yaml",
+) -> dict:
+    """id=9 knowledge 拼接控制（獨立設定檔）。檔案不存在時回傳安全預設（json 模式）。"""
+    if not Path(config_path).exists():
+        return {"knowledge_format": "json", "passllm_opts": None}
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    return {
+        "knowledge_format": cfg.get("knowledge_format", "json"),
+        "passllm_opts": cfg.get("passllm_opts"),
+    }
+
+
 def load_datasets(config: dict):
     dataset_path = PROJECT_ROOT / config["dataset_path"] / "split"
     return load_dataset(
@@ -173,8 +187,9 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     from util.pw_tokenize import process_train_targeted, get_alpa
 
     template_id      = config["train"]["prompt_template_id"]
-    knowledge_format = config["train"].get("knowledge_format", "json")
-    passllm_opts     = config["train"].get("passllm_opts")
+    _kf_cfg          = load_knowledge_format_config()
+    knowledge_format = _kf_cfg["knowledge_format"]
+    passllm_opts     = _kf_cfg["passllm_opts"]
     # id=9 (account+sibling) picks its instruction by knowledge_format; all others use _get_indice.
     if template_id == 9:
         prompt_template = account_sibling_system_prompt(knowledge_format)

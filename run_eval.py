@@ -164,8 +164,10 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     _EXCLUDE = {tokenizer.eos_token, "\t", "<", "|", ">"}
     constrained_vocab_dict = {c: tid for c, tid in vocab_dict.items() if c not in _EXCLUDE}
 
-    knowledge_format = search_cfg.get("knowledge_format", "json")
-    passllm_opts     = search_cfg.get("passllm_opts")
+    _kf_path = PROJECT_ROOT / "config" / "knowledge_format.yaml"
+    _kf_cfg  = _load_yaml(_kf_path) if _kf_path.exists() else {}
+    knowledge_format = (_kf_cfg or {}).get("knowledge_format", "json")
+    passllm_opts     = (_kf_cfg or {}).get("passllm_opts")
     if template_id == 9:
         from src.prompt_template import account_sibling_system_prompt
         system_prompt = account_sibling_system_prompt(knowledge_format)
