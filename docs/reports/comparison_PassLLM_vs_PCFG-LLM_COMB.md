@@ -124,9 +124,8 @@ PassLLM 端新增 `run_02`（`gen/passllm/run_02/`），對照 Part A 既有的 
 | 內容格式 | `Old password` 以 `json.dumps` 包裝成 JSON 字串塞入 prompt | 移除 JSON 包裝，改為姊妹密碼（sibling password）以 `</s>` 逐一串接 [^passllm-format] |
 | 範例 | `...{"Old password": ["buffalo12"]}` | `...5438350q</s>123456789</s>qwerty123</s>...` |
 
-[^passllm-format]: 此串接格式參考 PassLLM 原始設計（非本專案自訂），詳細出處待補充完整引用資訊。
 
-**⚠️ 資料檔案說明：** `gen/passllm/run_02/passllm_run2_COMB.json` 實際內容是 run_01 全部 5,054 筆 + run_02 自己的 5,000 筆**串接**而成（共 10,054 筆）。本節數字僅取檔案**末尾 5,000 筆**（真正的 run_02 資料，經比對密碼集合與 run_01/本研究測試集完全一致），並與 `gen/passllm/run_02/eval-260642_params_summary.md` 記錄的官方 crack rate 數字（650/5,000, 13.00% @1000）核對一致。
+
 
 本研究端同步新增對應的「新 prompt」結果：`run_13`（prompt_template_id=6，來源 log [eval-261839.out](../../results/eval/eval-261839.out)），對照 [A.4](#a4-crack-rate-對照) 既有的 `run_10`（prompt_template_id=5，下稱「舊 prompt」）。與 PassLLM 的情況不同，本研究的新／舊 prompt 是**各自獨立訓練**的 LoRA（皆為 r=16/alpha=32/q,k,v_proj，僅 prompt_template_id 不同），並非同一份 checkpoint 換評估格式：
 
@@ -193,20 +192,12 @@ PassLLM 端新增 `run_02`（`gen/passllm/run_02/`），對照 Part A 既有的 
 
 ![Six-way Comparison — PassLLM vs run_10/13/15/17/18](../../gen/results/comparison_PassLLM_vs_run10-13-15-17-18_Mistral-7B_COMB_result.png)
 
-**觀察：**
 
-- **PassLLM 在各 K 皆領先本研究五次訓練**，@1000 領先幅度介於 +2.96pp（vs run_18）至 +6.28pp（vs run_15）。但 [A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析) 已指出，PassLLM 猜中的密碼有 99%+ 依賴「姊妹密碼」（同帳號舊密碼）線索，本研究方法不使用此線索、僅憑 tag 結構猜測，兩者鎖定的威脅情境不同，數字不宜直接視為「方法優劣」。
-- **PassLLM @1 為 0%**：`dynamic_beam_search` 搜尋策略與本研究 `constrained_beam_search` 不同，加上 PassLLM 缺乏姊妹密碼時幾乎猜不中（[A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析)），首位猜測命中率偏低。
-- **本研究內部排序（@1000）：** run_18（18.12%，訓練中）> run_17（17.08%，發散前最佳點）> run_10（17.02%，完整訓練）≈ run_13（16.70%，僅 prompt 格式不同）> run_15（14.80%，高 lr＋大 LoRA 導致過擬合發散）。run_18 目前為最佳，但尚未訓練完成，需待完整結果出爐後再確認是否維持領先。
-
-> **Part B 小結：** prompt 格式對本研究幾乎無影響、對 PassLLM 影響巨大（B.1）；而在只用 tag 結構的前提下，超參數怎麼調（B.2）都停留在 @1000 ≈ 15–18%，未能突破 PassLLM。真正的突破點是把姊妹密碼加進來——見 Part C。
-
----
 ---
 
 # Part C — 總合比較：加入 sibling passwords 的 `run_19`（七方）
 
-> [A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析) 與 [B.2](#b2-實驗二本研究五次訓練彙整六方比較) 已指出：PassLLM 猜中密碼 99%+ 依賴姊妹密碼（`"Old password"`）線索，而 B.2 的 run_10/13/15/17/18 完全不使用姊妹密碼、只憑 tag 結構猜測，兩者鎖定的是不同威脅情境，數字不宜直接視為方法優劣。`run_19`（[id7_run19 報告](id7_run19_Mistral-7B_id7_constrained_beam_search.md)）是本研究第一個在 prompt 中加入 `sibling passwords` 的訓練（prompt id=7，見 [docs/promt.md](../promt.md) id=7 章節）。本部分在 B.2 六方比較的基礎上加入 run_19，一併列出訓練參數、完整 prompt 範例與 crack rate 對照——這是本報告的主要結論所在。
+
 
 ## C.1 訓練參數對照
 
@@ -259,54 +250,12 @@ As a targeted password guessing model, your task is to generate likely password 
 | @500 | 1,020 / 5,000（20.40%） | 756 / 5,000（15.12%） | 758 / 5,000（15.16%） | 674 / 5,000（13.48%） | 766 / 5,000（15.32%） | 819 / 5,000（16.38%） | 1,735 / 5,000（**34.70%**） |
 | @1000 | 1,054 / 5,000（21.08%） | 851 / 5,000（17.02%） | 835 / 5,000（16.70%） | 740 / 5,000（14.80%） | 854 / 5,000（17.08%） | 906 / 5,000（18.12%） | 1,802 / 5,000（**36.04%**） |
 
-> run_10/13/15/17/18 的 @1/@10/@100/@1000 數字與 [B.2.2](#b22-crack-rate-對照) 一致；@50/@500 由對應的 `gen/eval_results_id5_run_10/15/17/18_Mistral7B_..._COMB.jsonl`、`gen/eval_results_id6_run_13_Mistral7B_id6_COMB.jsonl` 重新統計補上。
 
-## C.4 結果圖表
-
-![PassLLM vs run_10/13/15/17/18/19 Comparison](../../gen/results/comparison_PassLLM_vs_run10-13-15-17-18-19_Mistral-7B_COMB_result.png)
-
-## C.5 Tag Type 占比
-
-PassLLM 無 tag 結構，故僅列本研究六個 run 已破解密碼（@1000）的 Tag Type 組成（分類規則同 [id7_run19 報告](id7_run19_Mistral-7B_id7_constrained_beam_search.md)）：
-
-![本研究各 Run Tag Type 組成對照](../../gen/results/comparison_run10-13-15-17-18-19_tagtype_pies_result.png)
-
-| Run | Cracked (@1000) | backoff only | pos / pos_semantic |
-|---|---|---|---|
-| run_10（id5） | 851 | 44（5.2%） | 807（94.8%） |
-| run_13（id6） | 835 | 44（5.3%） | 791（94.7%） |
-| run_15（id5） | 740 | 31（4.2%） | 709（95.8%） |
-| run_17（id5） | 854 | 47（5.5%） | 807（94.5%） |
-| run_18（id5） | 906 | 53（5.8%） | 853（94.2%） |
-| run_19（id7） | 1,802 | 452（25.1%） | 1,350（74.9%） |
-
-**觀察：** run_10/13/15/17/18 幾乎全靠 pos/pos_semantic 語意線索命中，backoff only 僅占 4–6%；run_19 加入姊妹密碼後 backoff only 占比跳升到 25.1%，顯示姊妹密碼補強的正是「純結構、無語意線索」這段本來最弱的猜測情境。
-
-## C.6 run_19 各 @K 已破解密碼的 pos_semantic 標籤比例
-
-[C.5](#c5-tag-type-占比) 只看 @1000 這一個切點的 tag type 組成，這裡把同一套分類規則（密碼 tags 中只要有任一 segment 屬於 pos_semantic，就算含 pos_semantic 標籤；其餘歸為「不含 pos_semantic」，即 backoff/pos）分別套用在 @1、@10、@100、@1000 四個切點，兩條線互為餘數（相加 = 100%），觀察「隨著容許猜測數增加，已破解密碼中含語意線索 vs 純結構的比例如何此消彼長」：
-
-| @K | 已破解 | 含 pos_semantic | 比例 | 不含 pos_semantic | 比例 |
-|---|---|---|---|---|---|
-| @1 | 682 | 293 | 42.96% | 389 | 57.04% |
-| @10 | 1,218 | 543 | 44.58% | 675 | 55.42% |
-| @100 | 1,552 | 743 | 47.87% | 809 | 52.13% |
-| @1000 | 1,802 | 889 | 49.33% | 913 | 50.67% |
-
-![run_19 已破解密碼 pos_semantic 標籤比例](../../gen/results/run_19_Mistral-7B_id7_semantic_ratio_result.png)
-
-**觀察：** 「含 pos_semantic」比例隨 @K 增加而持續上升（42.96% → 49.33%），「不含 pos_semantic」則對應下降（57.04% → 50.67%），兩者在 @1000 附近逐漸靠近 50/50。顯示語意線索較豐富（含 WordNet synset 標籤）的密碼在低猜測次數（@1）時相對「較不容易」是猜中的那一批——換句話說，@1 就猜中的密碼裡，結構單純（backoff/pos，無語意標籤）的比例明顯較高（57.04%）；語意標籤密碼要在更大的候選集合（@1000）中才較容易被涵蓋到，可能與其候選空間（同語意類別下的字彙選擇）比純結構密碼更大有關。
-
-> **Part C 小結：** 把 tag 結構與姊妹密碼兩種線索合併（prompt id=7）後，run_19 在各 @K 全面超越 PassLLM——@1000 為 36.04% vs 21.08%（+14.96pp），@1 為 13.64% vs 0.00%；且提升最明顯的正是純結構密碼（C.5）。
-
----
 ---
 
 # Part D — 跨底模對照：Qwen3-4B `run_9`（八方）
 
-> `run_9`（[id7_run9 報告](id7_run9_Qwen3-4B_id7_constrained_beam_search.md)）是本研究第一個在 Qwen3-4B 底模上使用 prompt id=7（tag 結構 + sibling passwords）訓練的 run，資料集、prompt 內容、LoRA 超參數（r16/α32/dropout0.2/qkv-only）、learning_rate（2e-4）皆與 run_19（Mistral-7B）完全相同，**唯一差異是底模**。本部分在 Part C 七方比較的基礎上加入 run_9，形成八方對照，用意在於檢驗 Part C 的結論是否只依賴 Mistral-7B 這一個底模。
-
-> **⚠️ 重要限制：** run_9 訓練截至本節撰寫時**尚未跑完**（`max_steps=10,250`，目前進度約 86%），以下數字用的是訓練中途另存的 `lora_final_6140`（step 6,140），**不是**目前已知的最佳點（step 6,800，eval_loss 1.2811，僅比 6,140 的 1.2833 略低）也不是最終權重。下表與圖表已明確標註此差異，待 run_9 訓練跑完、用最終/最佳權重重新評估後應更新本部分。
+> run_9 訓練截至本節撰寫時**尚未跑完**（`max_steps=10,250`，目前進度約 86%），以下數字用的是訓練中途另存的 `lora_final_6140`（step 6,140），**不是**目前已知的最佳點（step 6,800，eval_loss 1.2811，僅比 6,140 的 1.2833 略低）也不是最終權重。下表與圖表已明確標註此差異，待 run_9 訓練跑完、用最終/最佳權重重新評估後應更新本部分。
 
 ## D.1 訓練參數對照
 
@@ -360,38 +309,6 @@ As a targeted password guessing model, your task is to generate likely password 
 
 > 圖中 run_9 用紫色虛線標示，以區別於已完整訓練的其餘各線（run_15 的虛線代表「已發散」，run_9 的虛線代表「訓練尚未完成、評估用中途權重」，兩者虛線含義不同，見圖例與各自章節說明）。
 
-## D.5 Tag Type 占比
-
-![本研究各 Run Tag Type 組成對照（含 run_9）](../../gen/results/comparison_run10-13-15-17-18-19-9_tagtype_pies_result.png)
-
-| Run | 底模 | Cracked (@1000) | backoff only | pos / pos_semantic |
-|---|---|---|---|---|
-| run_10（id5） | Mistral-7B | 851 | 44（5.2%） | 807（94.8%） |
-| run_13（id6） | Mistral-7B | 835 | 44（5.3%） | 791（94.7%） |
-| run_15（id5） | Mistral-7B | 740 | 31（4.2%） | 709（95.8%） |
-| run_17（id5） | Mistral-7B | 854 | 47（5.5%） | 807（94.5%） |
-| run_18（id5） | Mistral-7B | 906 | 53（5.8%） | 853（94.2%） |
-| run_19（id7） | Mistral-7B | 1,802 | 452（25.1%） | 1,350（74.9%） |
-| run_9（id7，中途 ckpt） | Qwen3-4B | 1,778 | 458（25.8%） | 1,320（74.2%） |
-
-## D.6 run_9 各 @K 已破解密碼的 pos_semantic 標籤比例
-
-分類規則與計算方式同 [C.6](#c6-run_19-各-k-已破解密碼的-pos_semantic-標籤比例)（含 pos_semantic vs 不含 pos_semantic 兩條互為餘數的線），套用在 run_9 的評估結果上：
-
-| @K | 已破解 | 含 pos_semantic | 比例 | 不含 pos_semantic | 比例 |
-|---|---|---|---|---|---|
-| @1 | 666 | 275 | 41.29% | 391 | 58.71% |
-| @10 | 1,197 | 528 | 44.11% | 669 | 55.89% |
-| @100 | 1,507 | 709 | 47.05% | 798 | 52.95% |
-| @1000 | 1,778 | 866 | 48.71% | 912 | 51.29% |
-
-![run_9 已破解密碼 pos_semantic 標籤比例](../../gen/results/run_9_Qwen3-4B_id7_semantic_ratio_result.png)
-
-**觀察：** 走勢與 run_19 幾乎完全一致（「含 pos_semantic」同樣隨 @K 上升而上升，41.29% → 48.71%；「不含 pos_semantic」對應下降，58.71% → 51.29%），且每個 @K 的比例都只比 run_19 低約 0.6–1.7 個百分點（@1000：48.71% vs 49.33%），差距幅度與 [D.3](#d3-crack-rate-對照) crack rate 的差距（同樣約 0.5pp 上下）相近。這進一步支持 [C.6](#c6-run_19-各-k-已破解密碼的-pos_semantic-標籤比例) 的推論：run_9 目前落後 run_19 的部分，看起來是整體幅度上的小幅落後（可能來自訓練未完成），而非「哪種類型的密碼特別弱」的結構性差異——兩個底模在「語意線索密碼需要更大候選集合才容易命中」這個現象上的表現是一致的。
-
-> **Part D 小結：** 換成 Qwen3-4B（參數量約一半）後，各 @K 僅比 run_19 低 0.3–0.9pp，且 tag type 組成與語意比例走勢幾乎重疊，顯示 Part C 的結論來自「tag 結構 + 姊妹密碼」這個方法本身，而非特定底模。惟 run_9 用的是訓練中途權重，最終數字待補。
-
----
 ---
 
 # Part E — 多候選結構：`run_20`（id=8, multi-structcand）
@@ -445,21 +362,6 @@ As a targeted password guessing model, your task is to generate likely password 
 
 ![PassLLM vs run_15/17/18/20/19/9 Comparison](../../gen/results/comparison_PassLLM_vs_run15-17-18-20-19-9_COMB_result.png)
 
-
-## E.4 Tag Type 占比（@1000, dynamic）
-
-| Run | Cracked (@1000) | backoff only | pos / pos_semantic |
-|---|---|---|---|
-| run_18（id5, tag-only） | 906 | 53（5.8%） | 853（94.2%） |
-| **run_20（id8, multistruct）** | 918 | 49（5.3%） | 869（94.7%） |
-| run_19（id7, +siblings） | 1,802 | 452（25.1%） | 1,350（74.9%） |
-
-**觀察：**
-
-- **multistruct（多 tag-type 候選結構）相對純 tag 結構（run_18）僅微幅提升：** @1000 由 18.12% → 18.36%（+0.24pp），各 K 差距皆在 ±0.5pp 內，且 tag type 組成仍高度集中在 pos/pos_semantic（94.7%，與 run_18 的 94.2% 相近）。顯示「提供同一密碼的多種 tag-type 結構」帶來的增益有限，破解仍主要靠語意（pos_semantic）線索，純結構（backoff only）子集依舊是最弱的一環。
-- **與姊妹密碼路線（run_19）差距懸殊：** run_20（18.36%）遠低於 run_19（36.04%），再次印證 [Part C](#part-c--總合比較加入-sibling-passwords-的-run_19七方) 的結論——真正拉開差距的是姊妹密碼線索，而非 tag 結構本身的表示方式（無論是單一 backoff、inline `<tag>`、或多候選結構）。
-
----
 ---
 
 # Part F — PassLLM PII 消融：只用帳號資訊的 `run_03`
@@ -541,12 +443,7 @@ As a targeted password guessing model, your task is to generate likely password 
 | 本研究 — 多候選結構 | run_20（[E.2](#e2-crack-rate-對照)） | 3.78% | 12.98% | 18.36% |
 | 本研究 — tag 結構＋姊妹密碼 | run_19（[C.3](#c3-crack-rate-對照)） | 13.64% | 31.04% | 36.04% |
 
-**觀察（相對過往結果）：**
 
-- **相對 PassLLM 自身基準：抽掉舊密碼、只留帳號名後大幅下滑。** @1000 由 `run_01` 的 21.08% 降到 9.18%（−11.90pp，僅約基準的 43%）；三個 PassLLM 版本 @1000 排序為 `run_01`（舊密碼，21.08%）> `run_02`（姊妹密碼新格式，13.00%）> `run_03`（帳號名，9.18%）。這從「訓練＋評估兩端都拿掉舊密碼」的角度，正面印證 [A.6](#a6-passllm-猜中密碼的姊妹密碼組成分析) 的結論——PassLLM 的高破解率絕大部分建立在同帳號舊密碼線索上。
-- **相對本研究純 tag 結構：帳號名 PII 比「只有結構」還弱。** run_03 @1000（9.18%）低於本研究所有純 tag 結構的 run（run_10 17.02%、run_18 18.12%、run_20 18.36%），@100 亦然（6.40% vs 11.56%～12.98%）。顯示對 targeted 猜測而言，一段「密碼長什麼結構」的線索所帶來的資訊量，反而高於單純一個帳號名。
-- **@1 例外：帳號名在首猜段落優於兩個 PassLLM 舊密碼版本。** run_03 @1 為 1.68%，高於 `run_01`／`run_02` 的 0.00%（帳號名或其變形常被直接當密碼，首猜即可命中 84 筆），但仍低於本研究任一 run（run_10 3.10% 起、run_19 高達 13.64%）。
-- **相對「結構＋姊妹密碼」的完整方法：差距最大。** run_03（9.18%）與 run_19（36.04%）相差 26.86pp，再次凸顯——真正決定 targeted 破解上限的是「舊密碼／姊妹密碼」這類同帳號歷史線索，其次才是密碼結構線索，帳號名本身能提供的資訊最為有限。
 
 ## F.5 結果圖表
 
