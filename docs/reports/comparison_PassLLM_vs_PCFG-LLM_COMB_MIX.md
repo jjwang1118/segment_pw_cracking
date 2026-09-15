@@ -36,17 +36,70 @@
 
 # Section 1 — 新採樣的比較：`run_21` vs PassLLM `run_04`
 
-> 🚧 **本節保留區塊，待 `run_21` 於 COMB_MIX 測試集重評後補上。**
+> 本節建立 COMB_MIX 新採樣上的**兩側基準水準**：一側是本研究只用 tag 結構的 `run_21`（無任何帳號 / 姊妹密碼線索），另一側是 PassLLM 的 `run_04`（帳號名 + 姊妹密碼）。兩者評估於 COMB_MIX 同一組 5,000 筆測試集。
 >
-> **背景：** `run_21`（id=5，tag-only 基準）是**訓練於 COMB_MIX**（`COMB_MIX/backoff`）的模型，但其先前評估誤用了 **plain COMB** 測試集（實際評估的 5,000 筆密碼 100% 落在 plain COMB、與 COMB_MIX 的 5,000 筆交集僅 1 筆），無法與 `run_04` 做同測試集對照。已於 `config/search.yaml` 調整為以 `run_21/lora_final_5500` 在 COMB_MIX 的同一組 5,000 筆上重評（id=5 只讀 `Tags`、忽略 `Siblings` 欄；輸出 `eval_results_id5_run_21_Mist7B_id5_COMB_MIX_constrain_5000.jsonl`），詳見 [20260913_modify.md](../logs/20260913_modify.md)。
->
-> 待重評完成後，本節將補齊：
->
-> - **1.1 Prompt 比較**：`run_21`（id=5，純 tag 結構）vs PassLLM `run_04`（帳號 + sibling）。
-> - **1.2 參數比較**：訓練 / 評估參數對照。
-> - **1.3 結果比較**：crack rate @1/@10/@50/@100/@500/@1000（同測試集）。
->
-> PassLLM `run_04` 該側的完整數字已可用（見 [Section 2](#23-結果比較)）；此處僅待 `run_21@COMB_MIX` 的對應數字。
+> **背景（測試集修正）：** `run_21`（id=5，tag-only 基準）是**訓練於 COMB_MIX**（`COMB_MIX/backoff`）的模型，但其先前評估誤用了 **plain COMB** 測試集（實際評估的 5,000 筆密碼 100% 落在 plain COMB、與 COMB_MIX 的 5,000 筆交集僅 1 筆），無法與 `run_04` 做同測試集對照。已於 `config/search.yaml` 調整為以 `run_21/lora_final_5500` 在 COMB_MIX 的同一組 5,000 筆上重評（id=5 只讀 `Tags`、忽略 `Siblings` 欄；輸出 `eval_results_id5_run_21_Mist7B_id5_COMB_MIX_constrain_5000.jsonl`），詳見 [20260913_modify.md](../logs/20260913_modify.md)。本節數字即取自此次重評（eval log `eval-340916.out`）。
+
+## 1.1 Prompt 比較
+
+以 `index=0`（密碼 `lala123abc`，tags `char2|char2|number3|np1`，姊妹密碼 `["@ggeafw1", "jelugina", "lala123a"]`）為例，逐字擷取兩側 `model_input`：
+
+**`run_21`（id=5，只有 tag 結構）：**
+
+```
+As a targeted password guessing model, your task is to generate likely password candidates that match the given tag structure. Each <tag> placeholder names the character class for that segment. Do not output the tag placeholders. Generate only the password characters for each segment in order.{"password structure": "<char2><char2><number3><np1>"}
+```
+
+**PassLLM `run_04`（id=0，帳號名 + sibling，sequence 串接）：**
+
+```
+<s>As a targeted password guessing model, your task is to utilize the provided account information to guess the password.
+blutmage@ggeafw1jeluginalala123a
+```
+
+**比對重點：**
+
+- `run_21` 只給 tag 結構 `<char2><char2><number3><np1>`（長度與字元類別約束），**完全沒有**帳號名或姊妹密碼線索。
+- PassLLM `run_04` 反之：**沒有** tag 結構，只給帳號名 `blutmage` + 同帳號三筆姊妹密碼（無分隔符串接）。
+- 因此本節不是單一變因對照，而是**兩種完全不同的線索型態**（純結構 vs 帳號 + 舊密碼）在同測試集上的基準較量。
+
+## 1.2 參數比較
+
+| 項目 | `run_21`（本研究，tag-only） | PassLLM `run_04`（帳號 + sibling） |
+|---|---|---|
+| 底模 | Mistral-7B-v0.1 | Mistral-7B-v0.1 |
+| 訓練資料 | `semanticPCFG/COMB_MIX/backoff`（tag-only） | COMB_MIX targeted json（帳號 + 舊密碼） |
+| 線索 | tag 結構（**無** sibling / 帳號） | 帳號名 + sibling |
+| prompt_template_id | 5 | 0 |
+| prompt 格式 | JSON（`"password structure"`） | sequence 串接（無分隔符） |
+| LoRA r / alpha | 16 / 32 | 16 / 32 |
+| target_modules | q,k,v_proj | q,k,v_proj |
+| lora_dropout | 0.2 | 0.2 |
+| 有效 batch size | 256 | 256 |
+| learning_rate | 2e-4 | 5e-4 |
+| num_train_epochs（計畫） | 10 | 3 |
+| 訓練狀態 | **中途取消**（2026-09-11，step ≈6,232 / 14,800） | 完成 |
+| 評估用 checkpoint | `run_21/lora_final_5500`（step 5,500 ≈ epoch 3.7） | `mistral_7b_COMB_pii_sibling/final` |
+| 搜尋法 | constrained_beam_search + fallback→dynamic | dynamic_beam_search |
+| batch_size / max_guess | 1,000 / 1,000 | 100 / 1,000 |
+| 測試集 | COMB_MIX 5,000 | COMB_MIX 5,000 |
+
+## 1.3 結果比較
+
+| @K | `run_21`（tag-only） | PassLLM `run_04`（帳號 + sibling） | 差距（run_21 − run_04） |
+|---|---|---|---|
+| @1 | 110 / 5,000（**2.20%**） | 0 / 5,000（0.00%） | **+2.20pp** |
+| @10 | 282 / 5,000（5.64%） | 630 / 5,000（**12.60%**） | −6.96pp |
+| @50 | 438 / 5,000（8.76%） | 1,253 / 5,000（**25.06%**） | −16.30pp |
+| @100 | 535 / 5,000（10.70%） | 1,598 / 5,000（**31.96%**） | −21.26pp |
+| @500 | 731 / 5,000（14.62%） | 1,902 / 5,000（**38.04%**） | −23.42pp |
+| @1000 | 813 / 5,000（16.26%） | 1,968 / 5,000（**39.36%**） | −23.10pp |
+
+**觀察：**
+
+- **@1 本研究 tag-only 反而領先：** `run_21` 首猜命中 2.20%，PassLLM `run_04` 為 0.00%——tag 結構把長度與字元類別約束住，讓首猜較容易對上；PassLLM `dynamic_beam_search` 在 @1 幾乎不命中。
+- **@10 起 PassLLM 全面反超且差距持續拉大：** @10 起 `run_04` 領先，@100 已達 +21.26pp、@1000 達 +23.10pp。在每帳號都有姊妹密碼的 COMB_MIX 上，「帳號名 + 舊密碼」提供的線索遠比「純 tag 結構」豐富，隨猜測預算增大優勢越明顯。
+- **本節基準的意義：** `run_21` 是「只有結構、沒有任何個人線索」的下界；`run_04` 是「有個人線索但沒有 tag 結構」的外部參照。[Section 2](#section-2--加上-sibling-比較run_22-vs-run_21--passllm-run_04) 進一步顯示，當本研究方法**同時**握有 tag 結構 + 姊妹密碼（`run_22`）時，可在各 @K 全面超越 `run_04`。
 
 ---
 ---
@@ -84,7 +137,7 @@ blutmage@ggeafw1jeluginalala123a
 - `run_22` 以 **JSON list** 明確分隔三筆姊妹密碼 `["@ggeafw1", "jelugina", "lala123a"]`；PassLLM `run_04` 則把**帳號名 `blutmage` + 同三筆姊妹密碼**無分隔符直接串接成 `blutmage@ggeafw1jeluginalala123a`。
 - 三者都用到同一組姊妹密碼；`run_22` 用 tag 結構 + sibling，`run_04` 用帳號名 + sibling。
 
-[^run21-prompt]: `run_21` 此例為 id=5 模板對本帳號 tags 的 render（模板為確定性輸出）；精確字串將於 `run_21@COMB_MIX` 重評輸出中確認（見 [Section 1](#section-1--新採樣的比較run_21-vs-passllm-run_04)）。
+[^run21-prompt]: 此 `run_21` 字串已於 COMB_MIX 重評輸出 `eval_results_id5_run_21_Mist7B_id5_COMB_MIX_constrain_5000.jsonl` 的 `index=0` `model_input` 逐字確認（見 [Section 1](#section-1--新採樣的比較run_21-vs-passllm-run_04)）。
 
 ## 2.2 參數比較
 
@@ -110,34 +163,35 @@ blutmage@ggeafw1jeluginalala123a
 | 搜尋法 | constrained_beam_search + fallback→dynamic | constrained_beam_search + fallback→dynamic | dynamic_beam_search |
 | beam_width | 1,000（constrained；fallback [95,1000]×15） | 1,000（constrained；fallback [95,1000]×15） | [95, 1000] × 15 |
 | batch_size / max_guess | 1,000 / 1,000 | 1,000 / 1,000 | 100 / 1,000 |
-| 測試集 | COMB_MIX 5,000（重評中） | COMB_MIX 5,000 | COMB_MIX 5,000 |
+| 測試集 | COMB_MIX 5,000 | COMB_MIX 5,000 | COMB_MIX 5,000 |
 
 > `run_21`／`run_22` 除了 prompt_template_id（5 vs 7）與訓練資料是否含 sibling 欄之外，LoRA 與其餘超參數完全相同，屬乾淨對照；與 PassLLM `run_04` 相比則另有 learning_rate（2e-4 vs 5e-4）與訓練 epoch（10 vs 3）差異。三者評估用權重皆為中途 checkpoint（PassLLM `run_04` 已完成）。
 
 ## 2.3 結果比較
 
-| @K | `run_21`（tag-only） | `run_22`（tag + sibling, JSON） | PassLLM `run_04`（帳號 + sibling） |
+| @K | `run_21`（tag-only 基準） | `run_22`（tag + sibling, JSON） | PassLLM `run_04`（帳號 + sibling） |
 |---|---|---|---|
-| @1 | 待補（run_21@COMB_MIX 重評中） | 1,180 / 5,000（**23.60%**） | 0 / 5,000（0.00%） |
-| @10 | 待補 | 1,946 / 5,000（**38.92%**） | 630 / 5,000（12.60%） |
-| @50 | 待補 | 2,168 / 5,000（**43.36%**） | 1,253 / 5,000（25.06%） |
-| @100 | 待補 | 2,265 / 5,000（**45.30%**） | 1,598 / 5,000（31.96%） |
-| @500 | 待補 | 2,467 / 5,000（**49.34%**） | 1,902 / 5,000（38.04%） |
-| @1000 | 待補 | 2,533 / 5,000（**50.66%**） | 1,968 / 5,000（39.36%） |
+| @1 | 110 / 5,000（2.20%） | 1,180 / 5,000（**23.60%**） | 0 / 5,000（0.00%） |
+| @10 | 282 / 5,000（5.64%） | 1,946 / 5,000（**38.92%**） | 630 / 5,000（12.60%） |
+| @50 | 438 / 5,000（8.76%） | 2,168 / 5,000（**43.36%**） | 1,253 / 5,000（25.06%） |
+| @100 | 535 / 5,000（10.70%） | 2,265 / 5,000（**45.30%**） | 1,598 / 5,000（31.96%） |
+| @500 | 731 / 5,000（14.62%） | 2,467 / 5,000（**49.34%**） | 1,902 / 5,000（38.04%） |
+| @1000 | 813 / 5,000（16.26%） | 2,533 / 5,000（**50.66%**） | 1,968 / 5,000（39.36%） |
 
-> `run_21` 一欄待 [Section 1](#section-1--新採樣的比較run_21-vs-passllm-run_04) 的 COMB_MIX 重評數字補上（作為「加 sibling 前」的基準；參考其於 plain COMB 的 tag-only 水準約 @1000 ≈ 18%）。
+> `run_21`（tag-only）為「加 sibling 前」的基準，數字取自 COMB_MIX 重評（見 [Section 1](#section-1--新採樣的比較run_21-vs-passllm-run_04)）。
 
-**觀察（`run_22` vs PassLLM `run_04`，已可對照）：**
+**觀察：**
 
+- **加上姊妹密碼帶來巨大增益（`run_21` → `run_22`，本研究內部乾淨對照）：** 相同底模與 tag 結構下，只多了 `"sibling passwords"` 欄，@1000 由 16.26% 躍升至 50.66%（**+34.40pp**）、@1 由 2.20% 躍升至 23.60%（+21.40pp）。姊妹密碼是本方法最關鍵的線索。
 - **本研究 `run_22`（tag + sibling）在各 @K 全面領先 PassLLM `run_04`**，@1000 為 50.66% vs 39.36%（+11.30pp）；在每帳號都有姊妹密碼的 COMB_MIX 上，「tag 結構 + 姊妹密碼」比「帳號名 + 姊妹密碼」更強。
 - **@1 差距最極端：** `run_22` 首猜命中 23.60%，`run_04` 為 0.00%——tag 結構把長度與字元類別約束住，首猜即能對上大批密碼，PassLLM 的 `dynamic_beam_search` 在 @1 幾乎不命中。
-- 差距隨 K 收斂（@10 +26.3pp → @1000 +11.3pp），但 `run_22` 始終領先。
+- `run_22` 對 `run_04` 的差距隨 K 收斂（@10 +26.3pp → @1000 +11.3pp），但 `run_22` 始終領先。
 
 ## 2.4 結果圖表
 
-![Section 2 — run_22 (tag+sibling) vs PassLLM run_04 (account+sibling)，COMB_MIX](../../gen/results/comparison_COMB_MIX_sec2_addsibling_result.png)
+![Section 2 — run_22 (tag+sibling) vs run_21 (tag-only baseline) vs PassLLM run_04 (account+sibling)，COMB_MIX](../../gen/results/comparison_COMB_MIX_sec2_addsibling_result.png)
 
-> 圖中 `run_21`（tag-only 基準）線待 COMB_MIX 重評後補入。
+> 圖含三線：`run_22`（tag + sibling，藍實線）、`run_04`（帳號 + sibling，紅虛線）、`run_21`（tag-only 基準，灰點線）。`run_21` → `run_22` 的落差即「加姊妹密碼」的增益。
 
 ---
 ---
