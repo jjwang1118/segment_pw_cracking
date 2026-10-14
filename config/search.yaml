@@ -18,7 +18,7 @@ dynamic_beam_search:
   beam_width: [  95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]
   #[ 95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000 ]
   batch_size: 1000
-  prompt_template_id: 5
+  prompt_template_id: 9
   # id=9 (account+sibling) 的 knowledge 拼接方式改由 config/knowledge_format.yaml 控制
   # (passllm 模式無 <tag> 結構，id=9 請用本搜尋法，非 constrained_beam_search)
   vocab_limit: true
@@ -33,7 +33,7 @@ constrained_beam_search:
   beam_width: 1000          # single int — per-step cap auto-computed from char-class size
   search_width: 1000
   batch_size: 1000
-  prompt_template_id: 5     # run_21 (tag-only baseline) 重評用 id=5；跑 run_22 請改回 7
+  prompt_template_id: 9     # run_21 (tag-only baseline) 重評用 id=5；跑 run_22 請改回 7
   precistion: half
   max_guess_number: 1000
   fallback_to_dynamic: true # run_eval: fallback to dynamic_beam_search when pos/semantic tags present
@@ -55,13 +55,13 @@ constrained_contrastive_search:
   output_file_name: constrained_contrastive_search_results.jsonl
 
 eval:
-  model_path: checkpoints/Mistral-7B-v0.1/run_21/lora_final_5500
+  model_path: checkpoints/Mistral-7B-v0.1/run_25/lora_final_7100
   #checkpoints/Mistral-7B-v0.1/run_22/lora_final_7200
   #checkpoints/Llama-3.2-3B-Instruct/run_4/lora_final
   # eval-only fields _contrastive.jsonl
   # run_21 (id=5, tag-only) 重評於 COMB_MIX 測試集：與 run_22/23/04 同一份 test file + 前 5000 筆 → 同一組 5000 密碼
   # id=5 只讀 Tags 欄，忽略此檔的 Siblings 欄，因此可直接沿用 sibling 變體檔
-  test_data_path: datasets/processed/semanticPCFG/COMB_MIX/backoff/split/test_data.jsonl
+  test_data_path: datasets/processed/semanticPCFG/combine_acc_sibling_Collection1/sibling_account/backoff/split/test_data.jsonl
   max_eval_samples: 5000 # 外層迴圈：評估幾筆測試密碼（全量 53K 太慢）
-  eval_output_file_name: eval_results_id5_run_21_Mist7B_id5_COMB_MIX_constrain_5000.jsonl
+  eval_output_file_name: eval_results_id9_run_25_COMBMIX_Mist7B_id9_Collection1_sibling_acc_constrain_5000.jsonl
 

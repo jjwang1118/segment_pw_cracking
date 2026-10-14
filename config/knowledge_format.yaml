@@ -13,7 +13,7 @@
 # 兩種模式資料完全相同、只差呈現；target 一律用 95-char 逐字元編碼，loss 只壓 target+EOS。
 # ----------------------------------------------------------------------------
 
-knowledge_format: passllm        # json | passllm
+knowledge_format: json     # json | passllm
 
 passllm_opts:                 # 只在 knowledge_format=passllm 時生效
   include_structure: true    # 是否保留 <tag> 結構（false=純 PassLLM 無結構；true=串接格式但保留結構）

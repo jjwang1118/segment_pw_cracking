@@ -12,6 +12,10 @@
 
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
+export TMPDIR=/work/u4996812/tmp
+export HF_HOME=/work/u4996812/hf_cache
+mkdir -p "$TMPDIR" "$HF_HOME"
+
 cd ~/llm_pcfg_cracking
 source ~/miniconda3/etc/profile.d/conda.sh
 conda activate llm_pcfg_cracking_model

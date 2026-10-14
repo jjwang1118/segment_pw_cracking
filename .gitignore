@@ -64,3 +64,6 @@ runs/
 
 # Editor settings
 .vscode/
+
+# PassLLM raw candidate dumps (too large for GitHub, >100MB)
+gen/passllm/**/input_output.jsonl

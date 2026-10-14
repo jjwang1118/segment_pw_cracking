@@ -1,5 +1,5 @@
 seed: 42
-dataset_path: datasets/processed/semanticPCFG/combine_acc_sibling/sibling/backoff
+dataset_path: datasets/processed/semanticPCFG/combine_acc_sibling_Collection1/sibling_account/backoff
 segment_tag_path:
   path: gen/semanticPCFG # 僅供 legacy util/Dataprocess.py 使用
   kind: backoff # 可選：pos / backoff / pos_semantic

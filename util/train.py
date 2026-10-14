@@ -241,9 +241,18 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
         base_dir.mkdir(parents=True, exist_ok=True)
         run_dir = _next_run_dir(base_dir)
         snapshot_path = run_dir / "train_config_snapshot.json"
+        # 連同 knowledge_format.yaml 的串接設定一起寫入，確保事後可重現
+        # （id=9 才會實際使用；此設定不在 train_config.yaml 內，否則無法從快照得知
+        #   當次是 json 還是 passllm 組裝）
+        snapshot = dict(config)
+        snapshot["knowledge_format_config"] = {
+            "knowledge_format": knowledge_format,
+            "passllm_opts": passllm_opts,
+            "_note": "僅 prompt_template_id=9 使用；id!=9 時不影響組裝",
+        }
         with open(snapshot_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, ensure_ascii=False, indent=2)
-        print(f"[*] 已存參數快照：{snapshot_path}")
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        print(f"[*] 已存參數快照（含 knowledge_format）：{snapshot_path}")
 
     training_args = build_training_args(config, run_dir, train_size=len(train_dataset))
 

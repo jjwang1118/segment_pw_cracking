@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="700" viewBox="0 0 1040 700" font-family="'Segoe UI',Helvetica,Arial,sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#52514e"/>
+    </marker>
+    <style>
+      .title{font-size:21px;font-weight:700;fill:#0b0b0b}
+      .sub{font-size:12px;fill:#52514e}
+      .ghead{font-size:16px;font-weight:700;fill:#ffffff}
+      .gmeta{font-size:11px;fill:#f0f0f0}
+      .run{font-size:14px;font-weight:700;fill:#0b0b0b}
+      .idtag{font-size:11px;font-weight:700;fill:#ffffff}
+      .code{font-family:'Courier New',monospace;font-size:10.5px;fill:#1a1a19}
+      .lbl{font-size:11px;font-weight:700;fill:#2a2a28}
+      .cav{font-size:10.5px;fill:#b5480f;font-style:italic}
+      .note{font-size:11.5px;fill:#52514e}
+    </style>
+  </defs>
+
+  <rect width="1040" height="700" fill="#fcfcfb"/>
+
+  <!-- Title -->
+  <text x="30" y="34" class="title">Prompt Impact Experiment Design — COMB vs COMB_MIX</text>
+  <text x="30" y="54" class="sub">Within each group only the prompt changes; everything else is fixed. The two groups use different data — never compare absolute numbers across groups.</text>
+
+  <!-- Shared fixed config bar -->
+  <rect x="30" y="68" width="980" height="46" rx="8" fill="#eef1f4" stroke="#d3d8dd"/>
+  <text x="44" y="88" class="lbl">Shared fixed setup (identical in both groups)</text>
+  <text x="44" y="105" class="code">Mistral-7B · LoRA r16 / a32 / dropout0.2 / qkv-only · lr 2e-4 · epoch 10 · batch 256 · warmup 0.1 · backoff tag · test 5,000 · constrained_beam_search</text>
+
+  <!-- ============ LEFT: COMB ============ -->
+  <rect x="30" y="134" width="480" height="516" rx="10" fill="#ffffff" stroke="#2a78d6" stroke-width="2"/>
+  <rect x="30" y="134" width="480" height="40" rx="10" fill="#2a78d6"/>
+  <rect x="30" y="160" width="480" height="14" fill="#2a78d6"/>
+  <text x="48" y="160" class="ghead">Group 1: COMB</text>
+  <text x="300" y="153" class="gmeta">passwords md5 e1d6d01e…</text>
+  <text x="300" y="168" class="gmeta">262,263 rows · e.g. 31december</text>
+
+  <!-- run_19 -->
+  <rect x="50" y="196" width="440" height="96" rx="8" fill="#f6f9fd" stroke="#bcd4f1"/>
+  <rect x="64" y="210" width="60" height="20" rx="10" fill="#2a78d6"/>
+  <text x="94" y="224" class="idtag" text-anchor="middle">id=7</text>
+  <text x="134" y="225" class="run">run_19</text>
+  <text x="478" y="225" class="lbl" text-anchor="end">structure + sibling passwords (JSON)</text>
+  <rect x="64" y="240" width="412" height="40" rx="5" fill="#edf3fb" stroke="#d6e4f6"/>
+  <text x="72" y="256" class="code">{"password structure": "&lt;char2&gt;&lt;char2&gt;&lt;number3&gt;&lt;np1&gt;",</text>
+  <text x="72" y="271" class="code"> "sibling passwords": ["@ggeafw1","jelugina","lala123a"]}</text>
+
+  <!-- comparison arrow -->
+  <line x1="270" y1="292" x2="270" y2="338" stroke="#52514e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="140" y="300" width="260" height="26" rx="13" fill="#fff4e8" stroke="#eb6834"/>
+  <text x="270" y="317" class="lbl" text-anchor="middle" fill="#b5480f">variable: sibling vs multi-structure</text>
+
+  <!-- run_20 -->
+  <rect x="50" y="344" width="440" height="110" rx="8" fill="#f6f9fd" stroke="#bcd4f1"/>
+  <rect x="64" y="358" width="60" height="20" rx="10" fill="#2a78d6"/>
+  <text x="94" y="372" class="idtag" text-anchor="middle">id=8</text>
+  <text x="134" y="373" class="run">run_20</text>
+  <text x="478" y="373" class="lbl" text-anchor="end">structure + candidate structures (JSON)</text>
+  <rect x="64" y="388" width="412" height="40" rx="5" fill="#edf3fb" stroke="#d6e4f6"/>
+  <text x="72" y="404" class="code">{"password structure": "&lt;surname&gt;&lt;rouge.n.01&gt;&lt;number2&gt;",</text>
+  <text x="72" y="419" class="code"> "candidate structures": ["&lt;np1&gt;&lt;nn1&gt;&lt;number2&gt;", …]}</text>
+  <text x="72" y="446" class="cav">⚠ training not finished (best point step 4,100) · no siblings</text>
+
+  <!-- COMB result hint -->
+  <rect x="50" y="470" width="440" height="60" rx="8" fill="#f2f6fb" stroke="#d6e4f6"/>
+  <text x="64" y="490" class="lbl">within-group observation (@1000)</text>
+  <text x="64" y="509" class="note">sibling (run_19) 36.04%  &#8811;  multi-struct (run_20) 18.36%</text>
+  <text x="64" y="524" class="note">→ sibling clue far outperforms candidate structures (~+18pp)</text>
+
+  <!-- ============ RIGHT: COMB_MIX ============ -->
+  <rect x="530" y="134" width="480" height="516" rx="10" fill="#ffffff" stroke="#eb6834" stroke-width="2"/>
+  <rect x="530" y="134" width="480" height="40" rx="10" fill="#eb6834"/>
+  <rect x="530" y="160" width="480" height="14" fill="#eb6834"/>
+  <text x="548" y="160" class="ghead">Group 2: COMB_MIX</text>
+  <text x="800" y="153" class="gmeta">passwords md5 5ff33669…</text>
+  <text x="800" y="168" class="gmeta">378,719 rows · e.g. 25031984v</text>
+
+  <!-- run_21 -->
+  <rect x="550" y="192" width="440" height="66" rx="8" fill="#fdf7f3" stroke="#f3cdb6"/>
+  <rect x="564" y="204" width="60" height="20" rx="10" fill="#eb6834"/>
+  <text x="594" y="218" class="idtag" text-anchor="middle">id=5</text>
+  <text x="634" y="219" class="run">run_21</text>
+  <text x="978" y="219" class="lbl" text-anchor="end">tag structure only (JSON)</text>
+  <rect x="564" y="230" width="412" height="20" rx="5" fill="#fbeee4" stroke="#f3d9c6"/>
+  <text x="572" y="244" class="code">{"password structure": "&lt;char2&gt;&lt;char2&gt;&lt;number3&gt;&lt;np1&gt;"}</text>
+
+  <line x1="770" y1="258" x2="770" y2="286" stroke="#52514e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="650" y="263" width="240" height="22" rx="11" fill="#eef1f4" stroke="#b9c1c9"/>
+  <text x="770" y="278" class="lbl" text-anchor="middle">variable: with / without sibling</text>
+
+  <!-- run_22 -->
+  <rect x="550" y="300" width="440" height="66" rx="8" fill="#fdf7f3" stroke="#f3cdb6"/>
+  <rect x="564" y="312" width="60" height="20" rx="10" fill="#eb6834"/>
+  <text x="594" y="326" class="idtag" text-anchor="middle">id=7</text>
+  <text x="634" y="327" class="run">run_22</text>
+  <text x="978" y="327" class="lbl" text-anchor="end">+ sibling passwords (JSON list)</text>
+  <rect x="564" y="338" width="412" height="20" rx="5" fill="#fbeee4" stroke="#f3d9c6"/>
+  <text x="572" y="352" class="code">{"password structure":"…","sibling passwords":["@ggeafw1",…]}</text>
+
+  <line x1="770" y1="366" x2="770" y2="394" stroke="#52514e" stroke-width="1.6" marker-end="url(#arrow)"/>
+  <rect x="638" y="371" width="264" height="22" rx="11" fill="#eef1f4" stroke="#b9c1c9"/>
+  <text x="770" y="386" class="lbl" text-anchor="middle">variable: JSON vs sequence concat</text>
+
+  <!-- run_23 -->
+  <rect x="550" y="408" width="440" height="78" rx="8" fill="#fdf7f3" stroke="#f3cdb6"/>
+  <rect x="564" y="420" width="60" height="20" rx="10" fill="#eb6834"/>
+  <text x="594" y="434" class="idtag" text-anchor="middle">id=9</text>
+  <text x="634" y="435" class="run">run_23</text>
+  <text x="978" y="435" class="lbl" text-anchor="end">+ sibling passwords (sequence)</text>
+  <rect x="564" y="446" width="412" height="20" rx="5" fill="#fbeee4" stroke="#f3d9c6"/>
+  <text x="572" y="460" class="code">\n&lt;char2&gt;&lt;char2&gt;&lt;number3&gt;&lt;np1&gt;@ggeafw1jeluginalala123a</text>
+  <text x="572" y="479" class="cav">⚠ account not actually included (so = format variant of run_22)</text>
+
+  <!-- COMB_MIX result hint -->
+  <rect x="550" y="498" width="440" height="80" rx="8" fill="#fdf5ef" stroke="#f3d9c6"/>
+  <text x="564" y="518" class="lbl">within-group observation (@1000)</text>
+  <text x="564" y="537" class="note">tag-only 16.26%  →  +sibling 50.66%  (+34.40pp, huge gain)</text>
+  <text x="564" y="552" class="note">JSON 50.66%  vs  sequence 49.96%  (−0.70pp, format barely matters)</text>
+  <text x="564" y="567" class="note">→ content drives performance; packaging format is marginal</text>
+
+  <!-- Bottom cross-group note -->
+  <rect x="30" y="662" width="980" height="28" rx="8" fill="#eef1f4" stroke="#d3d8dd"/>
+  <text x="520" y="680" class="note" text-anchor="middle" font-weight="700">Different password md5, row count and test set across groups → compare only within a group; absolute crack rate is not comparable across groups</text>
+</svg>

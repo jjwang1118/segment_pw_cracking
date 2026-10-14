@@ -25,9 +25,13 @@ docs/promt.md id=7). Empty list "[]" when the account has none.
 "Account": the raw account-name string ("" when absent).
 
 Output:
-  datasets/processed/semanticPCFG/combine_acc_sibling/sibling/{tagtype}/split/{train,test}_data.jsonl
-  datasets/processed/semanticPCFG/combine_acc_sibling/sibling_account/{tagtype}/split/{train,test}_data.jsonl
+  datasets/processed/semanticPCFG/{out_root}/sibling/{tagtype}/split/{train,test}_data.jsonl
+  datasets/processed/semanticPCFG/{out_root}/sibling_account/{tagtype}/split/{train,test}_data.jsonl
   (each variant/tagtype dir holds a split/ subdir, matching util/train.py:load_datasets())
+
+  {out_root} is namespaced by dataset to avoid collisions:
+    COMB_MIX            -> combine_acc_sibling          (unchanged, backward compat)
+    any other dataset   -> combine_acc_sibling_{dataset}
 
 Usage:
   python run_pcfg_combine_acc_sibling.py                       # dataset=COMB_MIX, all tagtypes, both variants
@@ -49,7 +53,14 @@ CONFIG_PATH  = PROJECT_ROOT / "config" / "pcfg_segment.yaml"
 # and not used for COMB_MIX; the *_addacc.json files carry both Account + Old password).
 PASSLLM_DIR  = Path("/home/u4996812/passllm/data")
 SPLIT_DIR    = PROJECT_ROOT / "datasets" / "processed" / "semanticPCFG"
-OUT_DIR      = SPLIT_DIR / "combine_acc_sibling"
+
+# Output root is namespaced by dataset so different datasets don't collide.
+# COMB_MIX keeps its original "combine_acc_sibling" path for backward compat;
+# any other dataset gets its own top-level "combine_acc_sibling_{dataset}" dir.
+def out_root(dataset: str) -> Path:
+    if dataset == "COMB_MIX":
+        return SPLIT_DIR / "combine_acc_sibling"
+    return SPLIT_DIR / f"combine_acc_sibling_{dataset}"
 
 _SPLIT_TO_PASSLLM_FILE = {"train": "train_addacc.json", "test": "test_addacc.json"}
 
@@ -113,7 +124,7 @@ def combine_split(dataset: str, tagtype: str, split_name: str, sibling_limit: in
     with_account  = sum(1 for a in account_col if a)
 
     for variant, include_account in _VARIANTS.items():
-        out_dir  = OUT_DIR / variant / tagtype / "split"
+        out_dir  = out_root(dataset) / variant / tagtype / "split"
         out_path = out_dir / f"{split_name}_data.jsonl"
 
         if out_path.exists() and not force:
