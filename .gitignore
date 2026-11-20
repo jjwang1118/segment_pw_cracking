@@ -67,3 +67,6 @@ runs/
 
 # PassLLM raw candidate dumps (too large for GitHub, >100MB)
 gen/passllm/**/input_output.jsonl
+
+# Stage-1 plaintext training corpus (68M raw text, keep on disk / /work, not in git)
+datasets/plaintext/
