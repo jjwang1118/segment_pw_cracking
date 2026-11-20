@@ -9,17 +9,7 @@
 
 ---
 
-## Pipelines
-
-### Pipeline A — BPE（legacy，baseline 對照用）
-
-```
-processData.py → trainBPE.py → run_tokenize.py → util/Dataprocess.py → run_train.py
-```
-
-BPE 依語料頻率切分，`dragon99!` → `drag|on|99|!`，切分結果與 PCFG tag 語意不對齊，僅作為對照組。
-
-### Pipeline B — PCFG-native（current）
+## Pipeline
 
 ```
 processData.py → run_pcfg_segment.py → run_train.py
@@ -30,10 +20,10 @@ processData.py → run_pcfg_segment.py → run_train.py
 ### 執行指令
 
 ```bash
-# Step 1：資料清洗（兩條 path 共用）
+# Step 1：資料清洗
 python processData.py
 
-# Step 2：PCFG-native 切分 + 打標 + 分割（Pipeline B）
+# Step 2：PCFG-native 切分 + 打標 + 分割
 python run_pcfg_segment.py                    # 全部 tagtype × 全部 dataset
 python run_pcfg_segment.py --tagtype backoff  # 單一 tagtype
 python run_pcfg_segment.py --split-only       # CSV 已存在，只重做分割
@@ -49,7 +39,7 @@ python run_eval.py
 python run_search.py
 ```
 
-**資料流（Pipeline B）：**
+**資料流：**
 `datasets/*.txt` → `datasets/cleaned/{dataset}/` → `gen/semanticPCFG/{dataset}_{tagtype}_tagged.csv` → `datasets/processed/semanticPCFG/{tagtype}/split/{train,test}_data.jsonl`
 
 ---
@@ -130,4 +120,4 @@ pip install wordsegment nltk
 python -c "import nltk; nltk.download('wordnet')"
 ```
 
-外部套件（需手動 clone）：`models/semantic-guesser/` — PCFG tagger，兩條 pipeline 都需要
+外部套件（需手動 clone）：`models/semantic-guesser/` — PCFG tagger，打標階段必需

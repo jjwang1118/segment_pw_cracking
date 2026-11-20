@@ -67,3 +67,6 @@ runs/
 
 # PassLLM raw candidate dumps (too large for GitHub, >100MB)
 gen/passllm/**/input_output.jsonl
+
+# Plaintext password corpus for stage-1 fine-tuning (large raw data)
+datasets/plaintext/

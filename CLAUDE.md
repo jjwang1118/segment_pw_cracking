@@ -4,8 +4,7 @@
 
 Password guessing/cracking research system: segment passwords → PCFG tag tokens → fine-tune Qwen3-4B (QLoRA) to generate targeted candidates.
 
-- **Segmentation (current):** PCFG-native regex + `wordsegment` (`run_pcfg_segment.py`) — splits by character-class boundary (`dragon|99|!`), aligns with PCFG tag semantics
-- **Segmentation (legacy):** BPE (`trainBPE.py` → `run_tokenize.py`) — splits by frequency (`drag|on|99|!`), misaligns with tags; kept as baseline
+- **Segmentation:** PCFG-native regex + `wordsegment` (`run_pcfg_segment.py`) — splits by character-class boundary (`dragon|99|!`), aligns with PCFG tag semantics
 - **Tagging:** `semantic-guesser` library, 3 tag types: `backoff` (100% coverage) > `pos` (CLAWS7) > `pos_semantic` (WordNet)
 - **Training:** Qwen3-4B, QLoRA (4-bit NF4 + `paged_adamw_8bit`), prompt id=3 (placeholder slots)
 - **Datasets:** 000webhost (~567K), phpbb (~96K), hotmail (~6K)
@@ -13,15 +12,8 @@ Password guessing/cracking research system: segment passwords → PCFG tag token
 
 ---
 
-## Pipelines
+## Pipeline
 
-### Pipeline A — BPE (legacy)
-```
-processData.py → trainBPE.py → run_tokenize.py → util/Dataprocess.py → run_train.py
-               cleaned/       tokenizer/         gen/tagged/            checkpoints/
-```
-
-### Pipeline B — PCFG-native (current)
 ```
 processData.py → run_pcfg_segment.py ──────────────────────────────── → run_train.py
                cleaned/       Stage A: gen/semanticPCFG/               checkpoints/
@@ -42,19 +34,15 @@ processData.py → run_pcfg_segment.py ─────────────�
 ```
 llm_pcfg_cracking model/
 ├── config/
-│   ├── config.yaml               # BPE training + password cleaning
-│   ├── tokenize_setting.yaml     # BPE path tagging settings
+│   ├── config.yaml               # Password cleaning settings
 │   ├── pcfg_segment.yaml         # PCFG-native segmentation settings
 │   ├── train_config.yaml         # LLM training hyperparams + LoRA config
 │   └── search.yaml               # search_type + eval settings
 ├── src/
-│   ├── BPE.py                    # BPE tokenizer (Standard + PwdSegment modes)
-│   ├── Tokenize.py               # BPE inference + PCFG tag pipeline
 │   ├── PCFGSegment.py            # PCFGSegmenter: segment_and_tag(pw)
 │   └── prompt_template.py        # Prompt templates (id=1/2/3)
 ├── util/
 │   ├── data.py                   # load/clean/dedup passwords
-│   ├── Dataprocess.py            # JSONL splitting (BPE path)
 │   ├── pw_tokenize.py            # 95-char encoding + training batch builder
 │   ├── train.py                  # build_model, apply_lora, HF Trainer orchestration
 │   └── search.py                 # dynamic_beam_search + contrastive_search
@@ -65,11 +53,8 @@ llm_pcfg_cracking model/
 │   └── Qwen3-4B/                 # Base LLM weights
 ├── checkpoints/Qwen3-4B/         # QLoRA checkpoint dirs + TensorBoard
 ├── gen/
-│   ├── tagged/                   # BPE path CSVs
 │   └── semanticPCFG/             # PCFG-native path CSVs
-├── processData.py                # Stage 1: cleaning (both paths)
-├── trainBPE.py                   # BPE training (BPE path only)
-├── run_tokenize.py               # BPE segmentation + tagging
+├── processData.py                # Stage 1: cleaning
 ├── run_pcfg_segment.py           # PCFG-native seg + tag + split (Stage A+B)
 ├── run_train.py                  # LLM fine-tuning
 ├── run_search.py                 # Password generation (no eval)
@@ -144,7 +129,7 @@ wordsegment                                       # PCFG-native path
 nltk (wordnet corpus)                             # pos_semantic tagtype
 ```
 
-External: `models/semantic-guesser/` — clone manually; required for both pipelines.
+External: `models/semantic-guesser/` — clone manually; required for tagging.
 
 ---
 
