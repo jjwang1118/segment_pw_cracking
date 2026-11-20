@@ -1,0 +1,48 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# 純 plaintext「無條件分布學習」全參數微調 (full fine-tune, 不使用 LoRA)
+#
+# 目標：p(password)——讓模型學到大量密碼的分布 (MLE = token-level cross-entropy)
+# 資料：datasets/processed/plaintext/split/{train,test}_data.jsonl
+#        每行 {"Password": "..."}；來源為 datasets/plaintext/passwords_no_test.txt
+#        (已去除 test 命中 + 長度 8-20 + 字元集過濾，共 2,744,193 筆；其中 10,000 筆作 held-out)
+# 搭配腳本：run_train_plaintext.py
+# ─────────────────────────────────────────────────────────────────────────────
+
+seed: 42
+dataset_path: datasets/processed/plaintext   # 底下需有 split/{train,test}_data.jsonl
+
+train:
+  train_config:
+    model_name: Mistral-7B-v0.1       # 磁碟實際存在的 base；如改用 Qwen3-4B 請先放到 models/Qwen3-4B
+    model_path: /work/u4996812/models            # base + 階段一最終模型存放處 (改到 /work 避免 home 爆盤)
+    output_dir: /work/u4996812/checkpoints        # 訓練過程中的 checkpoint 暫存目錄 (/work)
+    # 階段一最終模型（全參數微調的完整權重）依 run_N 分目錄、不覆蓋舊的：
+    #   <model_path>/<model_name>-plaintext/run_N
+    #   (= /work/u4996812/models/Mistral-7B-v0.1-plaintext/run_N，與 checkpoints 的 run 編號對齊)
+    # 供階段二 (run_train.py) 以
+    #   model_path=/work/u4996812/models, model_name=Mistral-7B-v0.1-plaintext/run_N 引用
+
+    # ── full fine-tune 專用超參 ───────────────────────────────────────────────
+    per_device_train_batch_size: 32   # 密碼序列短(<=~24 tokens)，可開大 batch
+    gradient_accumulation_steps: 2
+    per_device_eval_batch_size: 64
+    learning_rate: "1e-5"             # ★ full FT 用小 LR (1e-5~2e-5)，不可沿用 LoRA 的 2e-4
+    num_train_epochs: 2               # ★ 學分布 1~3 epoch 即可，過多會變記憶化
+    weight_decay: 0.01
+    warmup_ratio: 0.03
+    label_smoothing_factor: 0         # ★ 密度估計要真實分布，維持 0 (平滑會把分布拉偏)
+
+    max_length: 48                    # 密碼最長 20 字元 + bos/eos，48 綽綽有餘
+    gradient_checkpointing: false     # 序列短、顯存不是瓶頸；開著只會變慢 (顯存吃緊再設 true)
+    bf16: true
+    optim: adamw_torch
+
+    logging_steps: 20
+    eval_strategy: steps
+    eval_steps: 500
+    save_steps: 500
+    save_total_limit: 5
+    eval_delay: 1
+    data_seed: 42
+    seed: 42
+    dataloader_num_workers: 4
