@@ -77,7 +77,8 @@ def _load_model(model_path: str, precision: str):
 
 
 def _build_prompt(entry: dict, template_id: int, system_prompt: str,
-                  knowledge_format: str = "json", passllm_opts: dict = None) -> str:
+                  knowledge_format: str = "json", passllm_opts: dict = None,
+                  seg_tag_clues: list = None) -> str:
     """Build the full prompt string for one test entry (no real password included)."""
     if template_id == 1:
         from src.prompt_template import prompt_convert_token_tag
@@ -116,6 +117,13 @@ def _build_prompt(entry: dict, template_id: int, system_prompt: str,
             {"Tags": entry.get("Tags"), "Siblings": entry.get("Siblings"),
              "Account": entry.get("Account")},
             system_prompt, knowledge_format, passllm_opts,
+        )
+    if template_id == 10:
+        from src.prompt_template import prompt_convert_seg_tag
+        return prompt_convert_seg_tag(
+            {"Tags": entry.get("Tags"), "Siblings": entry.get("Siblings"),
+             "Account": entry.get("Account")},
+            system_prompt, knowledge_format, seg_tag_clues,
         )
     raise ValueError(f"Unknown template_id: {template_id}")
 
@@ -168,9 +176,13 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
     _kf_cfg  = _load_yaml(_kf_path) if _kf_path.exists() else {}
     knowledge_format = (_kf_cfg or {}).get("knowledge_format", "json")
     passllm_opts     = (_kf_cfg or {}).get("passllm_opts")
+    seg_tag_clues    = (_kf_cfg or {}).get("seg_tag_clues") or []
     if template_id == 9:
         from src.prompt_template import account_sibling_system_prompt
         system_prompt = account_sibling_system_prompt(knowledge_format)
+    elif template_id == 10:
+        from src.prompt_template import seg_tag_system_prompt
+        system_prompt = seg_tag_system_prompt(seg_tag_clues)
     else:
         system_prompt = _get_indice(template_id)
 
@@ -223,7 +235,7 @@ def run_eval(search_cfg: dict, eval_cfg: dict, search_type: str = "contrastive_s
         for i, entry in enumerate(entries):
             real_pw     = str(entry.get("Password", ""))
             full_prompt = _build_prompt(entry, template_id, system_prompt,
-                                        knowledge_format, passllm_opts)
+                                        knowledge_format, passllm_opts, seg_tag_clues)
 
             input_ids = tokenizer(
                 full_prompt, return_tensors="pt", add_special_tokens=True

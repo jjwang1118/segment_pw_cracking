@@ -1,0 +1,42 @@
+# ============================================================
+# pagpass_segment.yaml
+#
+# Config for the PagPassGPT structure-tag pipeline.
+# Entry point: run_pagpass_segment.py
+#
+# Unlike semanticPCFG (backoff/pos/pos_semantic semantic tags), PagPassGPT
+# uses a single deterministic STRUCTURE tag: char-class run-lengths
+# (L=letters, N=digits, S=symbols), e.g. "love999!" -> Tags "L4|N3|S1",
+# Tokens "love|999|!".
+#
+# It does NOT re-sample or re-split: it reads the already-split semanticPCFG
+# JSONL (for the Password column + train/test membership) and only recomputes
+# Tokens/Tags per row, so the password set stays identical for a fair
+# comparison against semanticPCFG.
+#
+# Outputs:
+#   {output_root}/{dataset}/split/train_data.jsonl
+#   {output_root}/{dataset}/split/test_data.jsonl
+#   {output_root}/{dataset}/split/length_distribution.json
+# ============================================================
+
+# PagPassGPT repo (holds tools/ with get_pattern); lives outside this project.
+pagpassgpt_root: /home/u4996812/PagPassGPT
+
+# Source of passwords + train/test split: semanticPCFG already-split JSONL.
+input_root: datasets/processed/semanticPCFG
+# Any tagtype works as the Password source (Password is identical across them).
+ref_tagtype: backoff
+
+output_root: datasets/processed/PagPassGPT
+
+password_field: Password
+
+# Datasets to process (must exist under {input_root}/{dataset}/{ref_tagtype}/split/)
+datasets:
+  - rockyou-75
+  # - COMB
+  # - 000webhost
+
+# Re-run even if the output JSONL already exists
+force: false

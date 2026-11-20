@@ -87,6 +87,10 @@ def _get_indice(id):
             "Do not output the tag placeholders. "
             "Generate only the password characters for each segment in order."
         )
+    # id=10: numbered <seg_i,tag_i> structure + optional clues (seg_tag_clues). With no clues
+    # this equals id=6's instruction. Serialization follows knowledge_format, same switch as id=9.
+    if id == 10:
+        return seg_tag_system_prompt()
     raise ValueError(f"Unknown prompt id: {id}")
 
 
@@ -155,6 +159,72 @@ def build_account_sibling_knowledge(
         "account": account,
         "sibling passwords": siblings,
     }, ensure_ascii=False)
+
+
+SEG_TAG_CLUES = ("account", "sibling")
+
+
+def _normalize_seg_tag_clues(clues: list | None) -> list:
+    """Validate id=10 clues and return them in canonical order."""
+    clues = list(clues or [])
+    unknown = set(clues) - set(SEG_TAG_CLUES)
+    if unknown:
+        raise ValueError(f"Unknown seg_tag_clues: {sorted(unknown)}; allowed: {SEG_TAG_CLUES}")
+    return [clue for clue in SEG_TAG_CLUES if clue in clues]
+
+
+def seg_tag_system_prompt(clues: list | None = None) -> str:
+    """System prompt for id=10; names only the clues actually present in the prompt."""
+    clues = _normalize_seg_tag_clues(clues)
+    parts = ["structure information"]
+    if "account" in clues:
+        parts.append("account username")
+    if "sibling" in clues:
+        parts.append("sibling passwords (prior passwords from the same account)")
+    provided = parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
+    return (
+        f"As a targeted password guessing model, your task is to utilize the provided "
+        f"{provided} to guess the corresponding password."
+    )
+
+
+def build_seg_tag_knowledge(
+    tags: list,
+    knowledge_format: str = "json",
+    clues: list | None = None,
+    account: str | None = None,
+    siblings_raw: str | None = None,
+) -> str:
+    """Serialize id=10's numbered structure, e.g. <seg1,nn><seg2,number2>, plus optional clues.
+
+    "json":    one JSON object appended directly after the instruction.
+    "passllm": "\\n" + structure + <account,...><sibling,...> pieces, concatenated with no
+               separator between pieces (the markers keep clue boundaries visible).
+
+    A requested clue whose dataset column is missing raises instead of being dropped silently.
+    Empty values ("" account, "[]" siblings) are valid.
+    """
+    clues = _normalize_seg_tag_clues(clues)
+    if "account" in clues and account is None:
+        raise ValueError("seg_tag_clues includes 'account' but the dataset has no Account value")
+    if "sibling" in clues and siblings_raw is None:
+        raise ValueError("seg_tag_clues includes 'sibling' but the dataset has no Siblings value")
+    siblings = json.loads(siblings_raw) if "sibling" in clues else []
+
+    structure = ''.join(f"<seg{i},{tag}>" for i, tag in enumerate(tags, start=1))
+    if knowledge_format == "passllm":
+        pieces = [structure]
+        if "account" in clues:
+            pieces.append(f"<account,{account}>")
+        pieces += [f"<sibling,{sibling}>" for sibling in siblings]
+        return "\n" + "".join(pieces)
+
+    payload = {"password structure": structure}
+    if "account" in clues:
+        payload["account"] = account
+    if "sibling" in clues:
+        payload["sibling passwords"] = siblings
+    return json.dumps(payload, ensure_ascii=False)
 
 
 def prompt_convert(data: dict,template:str):
@@ -352,6 +422,19 @@ def prompt_convert_account_sibling(
         tags, account, siblings, knowledge_format, passllm_opts
     )
     return template + knowledge
+
+
+def prompt_convert_seg_tag(
+    data: dict,
+    template: str,
+    knowledge_format: str = "json",
+    clues: list | None = None,
+) -> str:
+    """Template (id=10): numbered <seg_i,tag_i> structure plus the clues named in `clues`."""
+    tags = data['Tags'].split('|') if data.get('Tags') else []
+    return template + build_seg_tag_knowledge(
+        tags, knowledge_format, clues, data.get('Account'), data.get('Siblings')
+    )
 
 
 def prompt_convert_multi_structure(data: dict, template: str) -> str:

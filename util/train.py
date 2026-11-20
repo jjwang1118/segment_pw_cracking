@@ -26,12 +26,13 @@ def load_knowledge_format_config(
 ) -> dict:
     """id=9 knowledge 拼接控制（獨立設定檔）。檔案不存在時回傳安全預設（json 模式）。"""
     if not Path(config_path).exists():
-        return {"knowledge_format": "json", "passllm_opts": None}
+        return {"knowledge_format": "json", "passllm_opts": None, "seg_tag_clues": []}
     with open(config_path, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
     return {
         "knowledge_format": cfg.get("knowledge_format", "json"),
         "passllm_opts": cfg.get("passllm_opts"),
+        "seg_tag_clues": cfg.get("seg_tag_clues") or [],
     }
 
 
@@ -183,16 +184,19 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     else:
         run_dir = None  # 新 run，等 base_dir 確定後再建立
 
-    from src.prompt_template import _get_indice, account_sibling_system_prompt
+    from src.prompt_template import _get_indice, account_sibling_system_prompt, seg_tag_system_prompt
     from util.pw_tokenize import process_train_targeted, get_alpa
 
     template_id      = config["train"]["prompt_template_id"]
     _kf_cfg          = load_knowledge_format_config()
     knowledge_format = _kf_cfg["knowledge_format"]
     passllm_opts     = _kf_cfg["passllm_opts"]
-    # id=9 (account+sibling) picks its instruction by knowledge_format; all others use _get_indice.
+    seg_tag_clues    = _kf_cfg["seg_tag_clues"]
+    # id=9 picks its instruction by knowledge_format, id=10 by seg_tag_clues; others use _get_indice.
     if template_id == 9:
         prompt_template = account_sibling_system_prompt(knowledge_format)
+    elif template_id == 10:
+        prompt_template = seg_tag_system_prompt(seg_tag_clues)
     else:
         prompt_template = _get_indice(template_id)
     datasets         = load_datasets(config)
@@ -213,6 +217,7 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
         template_id=template_id,
         knowledge_format=knowledge_format,
         passllm_opts=passllm_opts,
+        seg_tag_clues=seg_tag_clues,
     )
 
     train_dataset = datasets["train"].map(
@@ -237,18 +242,23 @@ def train(config: dict = None, resume_from_checkpoint: str = None):
     tc            = config["train"]["train_config"]
 
     if run_dir is None:
-        base_dir = PROJECT_ROOT / tc["output_dir"] / tc["model_name"]
+        # 輸出目錄名：有設 output_name 就用它，否則沿用 model_name（向後相容）。
+        # 階段二時 model_name 會帶 "<base>/run_N"（指向階段一模型），直接拿來命名輸出
+        # 會變成 .../run_N/run_M 兩層；設 output_name 可讓階段二輸出獨立且乾淨。
+        out_name = tc.get("output_name") or tc["model_name"]
+        base_dir = PROJECT_ROOT / tc["output_dir"] / out_name
         base_dir.mkdir(parents=True, exist_ok=True)
         run_dir = _next_run_dir(base_dir)
         snapshot_path = run_dir / "train_config_snapshot.json"
         # 連同 knowledge_format.yaml 的串接設定一起寫入，確保事後可重現
-        # （id=9 才會實際使用；此設定不在 train_config.yaml 內，否則無法從快照得知
+        # （id=9/10 才會實際使用；此設定不在 train_config.yaml 內，否則無法從快照得知
         #   當次是 json 還是 passllm 組裝）
         snapshot = dict(config)
         snapshot["knowledge_format_config"] = {
             "knowledge_format": knowledge_format,
             "passllm_opts": passllm_opts,
-            "_note": "僅 prompt_template_id=9 使用；id!=9 時不影響組裝",
+            "seg_tag_clues": seg_tag_clues,
+            "_note": "僅 prompt_template_id=9/10 使用（passllm_opts 僅 id=9，seg_tag_clues 僅 id=10）；其他 id 不影響組裝",
         }
         with open(snapshot_path, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)

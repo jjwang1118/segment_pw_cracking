@@ -68,7 +68,7 @@ def encode_limit(input_str,vocab):
     }
 
 def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, template_id=1,
-                           knowledge_format="json", passllm_opts=None):
+                           knowledge_format="json", passllm_opts=None, seg_tag_clues=None):
     """Batched preprocessing: batch is a dict of lists (batched=True in dataset.map).
     prompt_ids must be pre-computed once outside the map call.
     template_id=1: token+tag pairs (training format A)
@@ -172,6 +172,12 @@ def process_train_targeted(batch, prompt_ids, vocab, tokenizer, max_length=512, 
             siblings_list = json.loads(siblings) if siblings else []
             knowledge_text = build_account_sibling_knowledge(
                 tag_list, account or "", siblings_list, knowledge_format, passllm_opts
+            )
+        elif template_id == 10:
+            # numbered <seg_i,tag_i> structure + the clues selected by seg_tag_clues.
+            from src.prompt_template import build_seg_tag_knowledge
+            knowledge_text = build_seg_tag_knowledge(
+                tag_list, knowledge_format, seg_tag_clues, account, siblings
             )
         else:
             knowledge_text = json.dumps({
