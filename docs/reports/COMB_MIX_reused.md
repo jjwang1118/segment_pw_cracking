@@ -6,6 +6,7 @@
 |---|---|---|---|---|---|---|
 | **StructLLM-tag/sibling-json** | run_22 | `Mistral-7B-v0.1/run_22/lora_final_7200` | id=7 | tag 結構 + sibling | JSON list | constrained_beam_search（fallback→dynamic） |
 | **StructLLM-tag/sibling-seq** | run_23 | `Mistral-7B-v0.1/run_23/lora_final_7400` | id=9 | tag 結構 + sibling | sequence 串接 | constrained_beam_search（fallback→dynamic） |
+| **StructLLM-PagPassTag/sibling-json** | run_29 | `Mistral-7B-v0.1/run_29/lora_final_7400` | id=7 | PagPassGPT 結構（L/N/S）+ sibling | JSON list | constrained_beam_search（fallback→dynamic） |
 | **PassLLM** | COMB_MIX_sibling | `mistral_7b_COMB_MIX_sibling/final` | id=0 | 帳號 + sibling | sequence 串接 | dynamic_beam_search |
 | **PassBERT** | — | — | — | — | — | 外部基線（masked-LM） |
 
@@ -15,12 +16,14 @@
 
 同一組 5,000 筆 COMB_MIX 測試密碼、同底模（Mistral-7B-v0.1 + LoRA，PassBERT 除外）、同搜尋法（`constrained_beam_search`）；命名：`StructLLM-<線索>-<格式>`（線索 = tag/sibling；格式 = json 或 seq）。
 
-| K | sibling-json (run_22) | sibling-seq (run_23) | PassBERT | PassLLM (COMB_MIX_sibling) |
-|---:|---:|---:|---:|---:|
-| @1    | **23.60%** (1,180) | 20.02% (1,001) | 4.52% (226) | 0.00% (0) |
-| @10   | **38.92%** (1,946) | 36.38% (1,819) | 11.26% (563) | 11.56% (578) |
-| @100  | **45.30%** (2,265) | 44.34% (2,217) | 17.80% (890) | 29.20% (1,460) |
-| @1000 | **50.66%** (2,533) | 49.96% (2,498) | 22.94% (1,147) | 35.78% (1,789) |
+| K | sibling-json (run_22) | sibling-seq (run_23) | PagPassTag-json (run_29) | PassBERT | PassLLM (COMB_MIX_sibling) |
+|---:|---:|---:|---:|---:|---:|
+| @1    | **23.60%** (1,180) | 20.02% (1,001) | 21.44% (1,072) | 4.52% (226) | 0.00% (0) |
+| @10   | **38.92%** (1,946) | 36.38% (1,819) | 35.02% (1,751) | 11.26% (563) | 11.56% (578) |
+| @100  | **45.30%** (2,265) | 44.34% (2,217) | 38.40% (1,920) | 17.80% (890) | 29.20% (1,460) |
+| @1000 | **50.66%** (2,533) | 49.96% (2,498) | 40.66% (2,033) | 22.94% (1,147) | 35.78% (1,789) |
+
+> **PagPassTag (run_29)** 與 run_22/23 同為 StructLLM-sibling，差別僅在結構線索的 tag 詞彙：run_22/23 用 semantic-guesser 語意 tag，run_29 改用 PagPassGPT 的字元類別長度 tag（L/N/S，如 `L4|N3|L3`）。5,000 筆全數走 `fallback→dynamic`（PagPassGPT 的 L/N/S 皆非 backoff tag），因此無 §2.1 的 backoff/pos 分層。換用純結構長度 tag 後，@1000 由語意 tag 的 50.66% 降至 40.66%，顯示語意 tag 攜帶的額外資訊對重建密碼仍有幫助。
 
 
 

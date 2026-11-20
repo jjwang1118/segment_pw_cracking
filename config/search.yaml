@@ -5,7 +5,7 @@ contrastive_search:
   beam_width: [ 95, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500, 500 ]
   #[ 95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000 ]
   batch_size: 500
-  prompt_template_id: 7
+  prompt_template_id: 9
   vocab_limit: true
   precistion: half
   eos_threshold: 0.0001
@@ -18,7 +18,7 @@ dynamic_beam_search:
   beam_width: [  95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]
   #[ 95, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000 ]
   batch_size: 1000
-  prompt_template_id: 7
+  prompt_template_id: 9
   # id=9 (account+sibling) 的 knowledge 拼接方式改由 config/knowledge_format.yaml 控制
   # (passllm 模式無 <tag> 結構，id=9 請用本搜尋法，非 constrained_beam_search)
   vocab_limit: true
@@ -33,9 +33,10 @@ constrained_beam_search:
   beam_width: 1000          # single int — per-step cap auto-computed from char-class size
   search_width: 1000
   batch_size: 1000
-  prompt_template_id: 7     # run_21 (tag-only baseline) 重評用 id=5；跑 run_22 請改回 7
+  prompt_template_id: 9     # run_21 (tag-only baseline) 重評用 id=5；跑 run_22 請改回 7
   precistion: half
   max_guess_number: 1000
+  min_len: 8                # fallback→dynamic 時沿用；目標密碼全 >=8，避免浪費猜測額度在 <8 候選
   fallback_to_dynamic: true # run_eval: fallback to dynamic_beam_search when pos/semantic tags present
   output_path: gen
   output_file_name: constrained_beam_search_results.jsonl
@@ -45,7 +46,7 @@ constrained_contrastive_search:
   beam_width: 1000          # single int — per-step cap auto-computed from char-class size
   search_width: 1000
   batch_size: 100
-  prompt_template_id: 7
+  prompt_template_id: 9
   precistion: half
   max_guess_number: 1000
   use_contrastive: true
@@ -55,13 +56,13 @@ constrained_contrastive_search:
   output_file_name: constrained_contrastive_search_results.jsonl
 
 eval:
-  model_path: checkpoints/Mistral-7B-v0.1/run_22/lora_final_7200
+  model_path: checkpoints/Mistral-7B-v0.1/run_31/lora_final_5800
   #checkpoints/Mistral-7B-v0.1/run_22/lora_final_7200
   #checkpoints/Llama-3.2-3B-Instruct/run_4/lora_final
-  # eval-only fields _contrastive.jsonl
-  # run_21 (id=5, tag-only) 重評於 COMB_MIX 測試集：與 run_22/23/04 同一份 test file + 前 5000 筆 → 同一組 5000 密碼
-  # id=5 只讀 Tags 欄，忽略此檔的 Siblings 欄，因此可直接沿用 sibling 變體檔
-  test_data_path: datasets/processed/semanticPCFG/combine_acc_sibling_Collection1/sibling/backoff/split/test_data.jsonl
-  max_eval_samples: 5000 # 外層迴圈：評估幾筆測試密碼（全量 53K 太慢）
-  eval_output_file_name: eval_results_id7_run_22_COMBMIX_Mist7B_id7_Collection1_sibling_constrain_5000.jsonl
+  # eval-only fields
+  # run_31 = 兩階段(stage-1 plaintext full-FT → stage-2 LoRA)，id=9 + tag-only 資料
+  # ⚠ test_data_path 必須是完整 .jsonl 檔路徑：run_eval 直接 open()，不會自動補 /split/test_data.jsonl
+  test_data_path: datasets/processed/semanticPCFG/combine_acc_sibling/tag/backoff/split/test_data.jsonl
+  max_eval_samples: 5000 # 外層迴圈：評估幾筆測試密碼（全量太慢）
+  eval_output_file_name: eval_results_id9_run_31_Mist7B_id9_COMBMIX_onlytag_constrain_5000_2stage.jsonl
 

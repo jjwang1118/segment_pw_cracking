@@ -1,8 +1,13 @@
 # ============================================================================
-# knowledge_format.yaml — prompt id=9 (account + sibling) 的 knowledge 拼接控制
+# knowledge_format.yaml — prompt id=9 / id=10 的 knowledge 拼接控制
 # ============================================================================
 # 這份設定同時作用於「訓練」(util/train.py) 與「評估」(run_eval.py)，集中管理，
-# 不再散落在 train_config.yaml / search.yaml。只在 prompt_template_id=9 時生效。
+# 不再散落在 train_config.yaml / search.yaml。只在 prompt_template_id=9/10 時生效。
+#
+# id=10（<seg_i,tag_i> 結構 + 可選線索）讀 knowledge_format 與 seg_tag_clues；
+# passllm_opts 僅 id=9 使用：
+#   json    = instruction + {"password structure": "<seg1,nn><seg2,number2>", ...}
+#   passllm = instruction + "\n" + <seg1,nn><seg2,number2><account,...><sibling,...>
 #
 # knowledge_format:
 #   json    = 目前這種方式：instruction 後直接接一個 JSON object
@@ -14,6 +19,10 @@
 # ----------------------------------------------------------------------------
 
 knowledge_format: json     # json | passllm
+
+# 只在 prompt_template_id=10 時生效。[] = 純 tag；可選 account、sibling。
+# account 需用 sibling_account 資料集；缺少所選欄位時會直接報錯。
+seg_tag_clues: []
 
 passllm_opts:                 # 只在 knowledge_format=passllm 時生效
   include_structure: true    # 是否保留 <tag> 結構（false=純 PassLLM 無結構；true=串接格式但保留結構）

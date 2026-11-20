@@ -292,3 +292,43 @@ v_bolshova25031984vb5031984vb
 > **結構資訊**：json 模式恆有（`password structure` key）；passllm 模式預設**無**結構，需 `include_structure: true` 才保留。
 > **評估**：passllm 無結構 → 用 `dynamic_beam_search` / `contrastive_search`，勿用 `constrained_beam_search`。
 > **id=9 vs id=7**：id=9 多一個 `account` 欄，且可切換 json / passllm 兩種拼接格式。
+
+---
+
+#### id=10 `prompt_convert_seg_tag`（段落編號 + 可選線索）
+
+結構改成 `<seg_i,tag_i>`，可用 `seg_tag_clues` 選擇加入 `account`、`sibling`。`[]` 為純 tag，此時 instruction 與 id=6 相同；有線索時 instruction 會列出實際提供的線索。不需重新產生資料。拼接方式與 id=9 共用 `config/knowledge_format.yaml` 的 `knowledge_format`（`passllm_opts` 對 id=10 無作用）。
+
+| `seg_tag_clues` | 內容 | 資料集 |
+|---|---|---|
+| `[]` | 純 tag | 任一含 `Tags` 的資料集 |
+| `[account]` | 結構 + 帳號 | `sibling_account` |
+| `[sibling]` | 結構 + sibling | `sibling` 或 `sibling_account` |
+| `[account, sibling]` | 結構 + 帳號 + sibling | `sibling_account` |
+
+所選線索的欄位不存在時會直接報錯，不會靜默略過。
+
+兩個線索都加入時：
+
+```
+[json]    ...{"password structure": "<seg1,nn><seg2,number2>", "account": "alice", "sibling passwords": ["dragon88"]}
+[passllm] ...
+<seg1,nn><seg2,number2><account,alice><sibling,dragon88>
+```
+
+純 tag 範例如下。
+
+**`knowledge_format: passllm`** — 對照 id=6，只多段落編號：
+
+```
+As a targeted password guessing model, your task is to utilize the provided structure information to guess the corresponding password.
+<seg1,nn><seg2,number2><seg3,special1>
+```
+
+**`knowledge_format: json`** — instruction 後直接接 JSON：
+
+```
+As a targeted password guessing model, your task is to utilize the provided structure information to guess the corresponding password.{"password structure": "<seg1,nn><seg2,number2><seg3,special1>"}
+```
+
+> **實驗對照**：passllm 模式與 id=6 比較，可測 `seg_i` 的影響；json 模式與 passllm 模式比較，可測 JSON 包裝的影響。

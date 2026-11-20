@@ -79,6 +79,23 @@ llm_pcfg_cracking model/
 
 ---
 
+## Storage (HPC) — models & checkpoints live on `/work`
+
+**`/home` is only 100G and fills up fast; never write large model/checkpoint data there.** A 7B full fine-tune checkpoint (weights + optimizer state) is tens of GB and will 100%-fill `/home`, which crashes training at the first save with `Writing model shards: 0%` (seen in job 459793, 2026-11-12). `/work` has ~2.8P free — put all large artifacts there.
+
+| What | Location |
+|------|----------|
+| Base model (plaintext FT) | `/work/u4996812/models/Mistral-7B-v0.1` |
+| Stage-1 final model | `/work/u4996812/models/<model_name>_<train_num>` (e.g. `Mistral-7B-v0.1_1`) |
+| Training checkpoints | `/work/u4996812/checkpoints/<model_name>-plaintext/run_N/` |
+| HF cache / TMPDIR | `/work/u4996812/hf_cache`, `/work/u4996812/tmp` (set in `train_plaintext.sh`) |
+
+**Config wiring (`config/train_plaintext.yaml`):** `model_path: /work/u4996812/models`, `output_dir: /work/u4996812/checkpoints`. `run_train_plaintext.py` saves the final model to `PROJECT_ROOT / tc["model_path"] / <name>_<train_num>` — with an absolute `model_path`, it lands on `/work`. **Stage-2 (`run_train.py`) must set `model_path: /work/u4996812/models` to reference the stage-1 model.**
+
+Check free space before launching: `df -h ~ /work`. `/work` is outside the project tree, so VSCode's file explorer won't show it — browse via terminal or `File → Open Folder`.
+
+---
+
 ## Key Source Files
 
 | File | Key symbols |
